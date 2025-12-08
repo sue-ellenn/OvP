@@ -13,10 +13,10 @@ from urllib.parse import urljoin
 from datetime import datetime, timedelta
 import os
 import glob
-from requests_html import HTMLSession
+# from requests_html import HTMLSession
 
 
-def load_data(filename):
+def load_osiris_data(filename):
     df = pd.read_excel(filename)
     df.dropna(axis=0, how='any', subset=['INHOUD'], inplace=True)
 
@@ -485,13 +485,15 @@ def scrape_full_repo(current_time):
 
 
 def scrape_employees():
-    base_url = "https://www.ru.nl/zoeken/scope/medewerkers?w="
+    base_url = "https://www.ru.nl"
+    target = "https://www.ru.nl/zoeken/scope/medewerkers?w="
+
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                       "AppleWebKit/537.36 (KHTML, like Gecko) "
                       "Chrome/128.0.0.0 Safari/537.36",
-        "Referer": base_url,
+        "Referer": target,
     }
 
     # PARAMS = {
@@ -502,46 +504,192 @@ def scrape_employees():
     #     "order": "ASC"
     # }
 
-    TOTAL_RESULTS = 0
 
     # create session from OG webpage
-    html = get_html(base_url)
+    html = get_html(target)
     soup = BeautifulSoup(html, "html.parser")
 
     # print(soup.prettify())
     # quit()
+    TOTAL_RESULTS = 0
 
-    TOTAL_RESULTS = soup.find("div", class_=re.compile(r"overview"))
+    TOTAL_RESULTS = soup.find(string=re.compile(r"\bResultaat\b", re.I))
+    print("TOTAL_RESULTS", TOTAL_RESULTS)
+    match_ = re.findall(r"(\d+)", TOTAL_RESULTS.string)
+    TOTAL_RESULTS = int(match_[-1])
+    RPP = int(match_[-2])
+    print("RPP:", RPP)
 
-    print("res: ", TOTAL_RESULTS)
-    RPP = 0
-
-
-    for res in TOTAL_RESULTS:
-        match_ = re.findall(r"(\d+)", res.get_text())
-        print(res)
-        print("---------------------------------")
-
-        if match_:
-            TOTAL_RESULTS = int(match_[-1])
-            RPP = int(match_[-2])
-            print("RPP:", RPP)
-            break
-
-    quit()
+    # quit()
     file_name = "created_data/employees/employees" + current_time + ".csv"
 
+    file_headers = ["Name", "Url", "Faculties", "Keywords", "Onderzoeksthema", "Onderzoeksgroep", "Publicaties",
+     "Onderzoeksbeurzen en -prijzen", "Projecten", "Onderwijs", "In de media", "Curriculum Vitae",
+     "Nevenwerkzaamheden"]
+
+    page_count = 0
+
     with open(file_name, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, ["Name", "url", "Onderzoeksthema", "Onderzoeksgroep", "Publicaties", "Onderzoeksbeurzen en -prijzen", "Projecten", "Onderwijs", "In de media", "Curriculum Vitae","Nevenwerkzaamheden"] )
+        writer = csv.DictWriter(f, file_headers )
         writer.writeheader()
 
         for offset in range(0, TOTAL_RESULTS, RPP):
             print("Offset", offset)
 
-            employee_list = soup.find_all("h2", class_="card-title")
-            print("Employees:", employee_list)
+            employee_list = soup.find_all("h2", class_="card__title")
+            # print("Employees:", employee_list)
 
+            for emp in employee_list:
+                print("------------------------------------------------")
+
+                # get name
+                name = emp.find("a")
+                try:
+                    emp_url = urljoin(base_url, name["href"])
+                except:
+                    continue
+
+
+                print("URL: ", emp_url)
+
+                name = emp.find("span", class_="link__text").string
+                print("Name", name)
+
+                data_dict = exctract_employee_page(emp_url, file_headers)
+                data_dict["Name"] = name
+                data_dict["Url"] = emp_url
+
+                print("Dictionary keys:", data_dict.keys())
+
+
+                for k in data_dict.keys():
+                    if k not in file_headers:
+                        print(k)
+                        break
+                writer.writerow(data_dict)
+
+            print("------------------------------------------------")
+
+            # next page
+            page_count += 1
+            target = f"https://www.ru.nl/zoeken/scope/medewerkers?w=&page={page_count}"
+
+            html = get_html(target)
+            soup = BeautifulSoup(html, "html.parser")
+            print("Next page: succes!")
+
+            #     break
+            # break
+
+
+                # faculty = emp.find_all("div", class_="meta-data")
+                # print("Faculty", faculty)
+                #
+                #
+                # faculty_names = faculty.find_all("a")
+                # print("faculty names", faculty_names)
+
+    print("Finished")
     return
+
+def exctract_employee_page(url, file_headers):
+    # url = "https://www.ru.nl/personen/kwisthout-j"
+
+    html = get_html(url)
+    page_soup = BeautifulSoup(html, "html.parser")
+
+    # print(page_soup.prettify())
+
+    """
+    ["Name", "Faculteit", "Keywords", "url", "Onderzoeksthema", "Onderzoeksgroep", "Publicaties",
+     "Onderzoeksbeurzen en -prijzen", "Projecten", "Onderwijs", "In de media", "Curriculum Vitae",
+     "Nevenwerkzaamheden"] )
+    """
+
+    data_dict = {}
+    # faculty/affiliations names
+    faculty_names = page_soup.find("p", class_="text text--intro")
+
+    if faculty_names:
+
+        data_dict["Faculties"] = list(faculty_names.stripped_strings)
+    else:
+        data_dict["Faculties"] = "None found"
+
+    print("Faculty names:", data_dict["Faculties"])
+
+    # small_header_soup = page_soup.find_all("div", class_="profile__content")
+
+    # onderzoeksthemas
+    small_headers = page_soup.find_all("span", class_="label")
+
+    # print("Small headers: ", small_headers)
+
+
+    if small_headers:
+        for h in small_headers:
+            h_str = h.string
+            # print("string: ", h_str)
+
+            if h_str in file_headers:
+                # print("header: ", h.find_next("ul", class_="list"))
+                print("--------------")
+                print("Header:", h_str)
+                link_list = h.find_next("ul", class_="list")
+                links = link_list.find_all("a")
+
+                themas = []
+                if links:
+                    for link in links:
+                        link_str = link.string
+                        themas.append((link_str, link['href']))
+                        print(link_str)
+                # print("list:", themas)
+                #     print(h_str)
+
+                    data_dict[h_str] = themas
+
+
+    keywords = page_soup.find_all("span", class_="meta-data__item")
+    if keywords:
+        kw_list = []
+        for kw in keywords:
+            kw_str = kw.string
+            kw_list.append(kw_str)
+        data_dict["Keywords"] = kw_list
+        print("Keywords:", data_dict["Keywords"])
+    big_headers = page_soup.find_all("h3", class_=["accordion-item"])
+    # print("Big headers: ", big_headers)
+
+    if big_headers:
+        for h in big_headers:
+            h_str = h.get_text(strip=True)
+            print("--------------")
+            print("Big Header:", h_str)
+
+            if h_str in file_headers:
+                link_list = h.find_next("ul", class_="list")
+                if link_list:
+                    papers = link_list.find_all("li")  # "span"
+                    # urls = link_list.find_all("a")
+
+                    themas = []
+                    if papers:
+                        for pap in papers:
+                            url = pap.find_next("a")
+                            tuptup = (pap.get_text(strip=True), url["href"])
+                            # print("Tuple: ", tuptup)
+                            themas.append(tuptup)
+                            print(tuptup)
+
+                        data_dict[h_str] = themas
+            # break
+
+    # print("Dictionary big: ", data_dict)
+    # print("Dictionary keys: ", data_dict.keys())
+
+    return data_dict
+
 
 def get_html(url):
     with sync_playwright() as p:
@@ -553,15 +701,20 @@ def get_html(url):
         browser.close()
     return html
 
+def load_all_data():
+    osiris_data = load_osiris_data("raw_data.xlsx")
+    repo_data = pd.read_csv("created_data/repository/emp_20251115_161743.csv")
+    employee_data = pd.read_csv("created_data/employees/employees20251115_161743.csv")
+    return osiris_data, repo_data, employee_data
 
 if __name__ == '__main__':
     # scrape()
-    data = load_data("raw_data.xlsx")
+    osiris_data = load_osiris_data("raw_data.xlsx")
 
     print("Data is loaded!")
     # print(data.iloc[0]['DOCENT_ROL'])
 
-    teachers = get_column_list(data, 'DOCENT_ROL')
+    # teachers = get_column_list(osiris_data, 'DOCENT_ROL')
     # print(teachers)
 
     # alphabet = string.ascii_lowercase
@@ -577,7 +730,21 @@ if __name__ == '__main__':
     print(repo_data.head())
     print("-----------------------------------------")
 
-    scrape_employees()
+    # scrape_employees()
+    employee_data = pd.read_csv("created_data/employees/employees20251115_161743.csv")
+
+    print(employee_data.head())
+    print("------------------------------------------")
+    print("Data is loaded!")
+
+    print("Employee data columns: ", employee_data.columns.to_list)
+    print("Repository data columns: ", repo_data.columns.to_list)
+    print("Osiris data columns: ", osiris_data.columns.to_list())
+
+
+
+
+
 
 
     """
