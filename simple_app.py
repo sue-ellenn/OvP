@@ -21,7 +21,8 @@ def preprocess(text):
     if pd.isna(text):
         return ""
     text = str(text).lower()
-    return preprocess_cached(text)
+    return text
+    # return preprocess_cached(text)
 
 def count_occurrences(text, keyword):
     processed = preprocess(text)
@@ -35,7 +36,7 @@ def compute_scores(keyword, employee_data, repo_data, osiris_data):
     print("Employee data")
     for _, row in employee_data.iterrows():
         name = row.get("Name", "Unknown")
-        print("Name:", name)
+        # print("Name:", name)
 
         total = 0
         for col in ["Keywords", "Publicaties", "Onderwijs", "In de media", "Projecten"]:
@@ -44,10 +45,10 @@ def compute_scores(keyword, employee_data, repo_data, osiris_data):
                 if isinstance(value, list):
                     # Join list items into a single string
                     value = " ".join(str(v) for v in value)
-                print("Value:", value)
+                # print("Value:", value)
                 total += count_occurrences(value, keyword)
 
-        print("Total:", total)
+        # print("Total:", total)
         if total > 0:
             scores[name] = scores.get(name, 0) + total
 
@@ -67,14 +68,14 @@ def compute_scores(keyword, employee_data, repo_data, osiris_data):
                 scores[author] = scores.get(author, 0) + total
 
     # Osiris Data
-    # for _, row in osiris_data.iterrows():
-    #     instructor = row.get("DOCENT_ROL", "Unknown")
-    #     total = sum(count_occurrences(row.get(col, ""), keyword)
-    #                 for col in ["Aims", "LANGE_NAAM_NL"]  # "INHOUD",
-    #                 if col in osiris_data.columns)
-    #
-    #     if total > 0:
-    #         scores[instructor] = scores.get(instructor, 0) + total
+    for _, row in osiris_data.iterrows():
+        instructor = row.get("DOCENT_ROL", "Unknown")
+        total = sum(count_occurrences(row.get(col, ""), keyword)
+                    for col in ["Aims", "LANGE_NAAM_NL"]  # "INHOUD",
+                    if col in osiris_data.columns)
+
+        if total > 0:
+            scores[instructor] = scores.get(instructor, 0) + total
 
     return scores
 
@@ -112,5 +113,5 @@ def search_keyword_loop(employee_data, repo_data, osiris_data):
 
         # print()
 
-search_keyword_loop(employee_data, repo_data, None)
+# search_keyword_loop(employee_data, repo_data, None)
 

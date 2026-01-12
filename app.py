@@ -77,7 +77,7 @@
 # #         with st.chat_message("assistant"):
 # #             response = st.write_stream(stream)
 # #         st.session_state.messages.append({"role": "assistant", "content": response})
-
+import base64
 
 import pandas as pd
 import re
@@ -156,6 +156,89 @@ def compute_scores(keyword, employee_data, repo_data, osiris_data):
     return scores
 
 def run_streamlit_ui(employee_data, repo_data, osiris_data):
+    st.set_page_config(page_title="", layout="wide")
+    # st.image('app_layouts/RU_LOGO_COMPLEET.png', width=300)
+    # st.logo('app_layouts/RU_LOGO_COMPLEET.png', link="https://www.ru.nl/", size="large")
+
+    # Create three columns, with the middle one taking most space
+    # col1, col2, col3 = st.columns([1, 3, 1])  # Relative widths
+    #
+    # # Place the image in the middle column
+    # with col2:
+    #     st.image("app_layouts/RU_LOGO_COMPLEET.png",)
+
+    # Banner with centered logo
+    # st.markdown(
+    #     """
+    #     <style>
+    #     .top-banner {
+    #         width: 100%;
+    #         background-color: #f5f5f5;
+    #         padding: 15px 0;
+    #         text-align: center;
+    #         border-bottom: 1px solid #ddd;
+    #     }
+    #     .top-banner img {
+    #         height: 60px;
+    #     }
+    #     </style>
+    #
+    #     <div class="top-banner">
+    #         <img src="app_layouts/RU_LOGO_COMPLEET.png">
+    #     </div>
+    #     """,
+    #     unsafe_allow_html=True
+    # )
+
+    def get_base64_image(image_path):
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+
+    logo_base64 = get_base64_image("app_layouts/RU_LOGO_COMPLEET.png")
+
+    st.markdown(
+        f"""
+        <style>
+        .top-banner {{
+            width: 100%;
+            background-color: #ffffff;
+            padding: 15px 0;
+            text-align: center;
+            border-bottom: 0px solid #ddd;
+        }}
+        .top-banner img {{
+            height: 150px;
+        }}
+        </style>
+
+        <div class="top-banner">
+            <a href="https://www.ru.nl" target="_blank">
+            <img src="data:image/png;base64,{logo_base64}">
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # Custom CSS for centering the image and adjusting spacing
+    # st.markdown("""
+    # <style>
+    # .big-logo {
+    #     display: block;
+    #     margin-left: auto;
+    #     margin-right: auto;
+    #     width: 50%; /* Adjust width as needed */
+    #     max-width: 400px; /* Prevents it from getting too big */
+    # }
+    # /* Adjust main content padding to bring it closer to the top */
+    # .stApp > div[data-testid="stAppViewContainer"] > div {
+    #     padding-top: 2rem;
+    # }
+    # </style>
+    # """, unsafe_allow_html=True)
+    #
+    # # Display the logo
+    # st.markdown('<img src="app_layouts/RU_LOGO_COMPLEET.png" class="big-logo">', unsafe_allow_html=True)
+
     st.title("Keyword Search Across Databases")
     keyword = st.text_input("Enter keyword")
     max_results = st.number_input("Max results", min_value=5, value=5)

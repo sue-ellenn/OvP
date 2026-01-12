@@ -41,6 +41,7 @@ def test_keyword_employee_match(keyword, name):
     # keyword = "YOUR_KEYWORD"
     # expected_name = "EXPECTED_EMPLOYEE"
 
+
     scores = compute_scores(keyword, employee_data, repo_data, osiris_data)
 
     assert name in scores, f"Expected {name} not found for keyword {keyword}"
@@ -55,8 +56,18 @@ examples = parse_keyword_file("Voorbeeld zoektermen.txt")
 for ex in examples:
     print("------------------------------------------------")
     print(f"Keyword: {ex[0]}, Employee: {ex[1]}")
+    successes, failures = 0, 0
     try:
         test_keyword_employee_match(ex[0], ex[1])
+        successes += 1
     except:
         print("Failed test")
+        failures += 1
+    print(f"Successes: {successes}/{failures}")
     print("------------------------------------------------")
+
+    # lemma keywords
+    # convert keywords into vectors
+    # find closest matches
+    # convert vectors back into keywords
+    # get relevant names
