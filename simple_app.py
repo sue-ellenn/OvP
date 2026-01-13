@@ -6,12 +6,14 @@ import spacy
 from scraper import load_all_data
 
 # Load small NLP model (tokenization, lemmatization)
+# spacy.load('nl_core_news_lg')
 nlp = spacy.load("nl_core_news_lg")
 
 # osiris_data, repo_data, employee_data = load_all_data()
 
 repo_data = pd.read_csv("created_data/repository/emp_20251115_161743.csv")
 employee_data = pd.read_csv("created_data/employees/employees20251115_161743.csv")
+osiris_data = pd.read_excel("created_data/CORRECT_DATA/raw_data.xlsx")
 
 @lru_cache(maxsize=50000)
 def preprocess_cached(text: str):
@@ -23,7 +25,7 @@ def preprocess(text):
     if pd.isna(text):
         return ""
     text = str(text).lower()
-    return text
+    return preprocess_cached(text)
     # return preprocess_cached(text)
 
 def count_occurrences(text, keyword):
@@ -87,15 +89,15 @@ def search_keyword_loop(employee_data, repo_data, osiris_data):
     while True:
         print("------------------------------------------")
         print("Type 'quit' to exit the keyword search.")
-        keyword = input("Enter keyword to search: ").strip()
-        # keyword = "ethiek"
+        # keyword = input("Enter keyword to search: ").strip()
+        keyword = "ethiek"
         if keyword.lower() == "quit":
             print("Exiting search loop.")
             break
 
         try:
-            max_results = int(input("Maximum results: "))
-            # max_results = 20
+            # max_results = int(input("Maximum results: "))
+            max_results = 20
         except ValueError:
             print("Invalid number. Try again. ")
             continue
@@ -115,5 +117,5 @@ def search_keyword_loop(employee_data, repo_data, osiris_data):
 
         # print()
 
-# search_keyword_loop(employee_data, repo_data, None)
+search_keyword_loop(employee_data, repo_data, osiris_data)
 
