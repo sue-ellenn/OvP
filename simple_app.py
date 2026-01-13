@@ -56,13 +56,16 @@ def compute_scores(keyword, employee_data, repo_data, osiris_data):
         if total > 0:
             scores[name] = scores.get(name, 0) + total
 
+
+    print("-------------------")
+    print("Repo data")
     # Repo Data
     for _, row in repo_data.iterrows():
         authors = row.get("authors", [])
 
         if isinstance(authors, str):
             authors = [authors]
-
+        print(f"authors: {authors}")
         total = sum(count_occurrences(row.get(col, ""), keyword)
                     for col in ["title", "keywords", "publishing_info"]
                     if col in repo_data.columns)
@@ -71,15 +74,21 @@ def compute_scores(keyword, employee_data, repo_data, osiris_data):
             for author in authors:
                 scores[author] = scores.get(author, 0) + total
 
+    print("------------------")
+    print("Osiris data")
     # Osiris Data
     for _, row in osiris_data.iterrows():
         instructor = row.get("DOCENT_ROL", "Unknown")
+        print(f"Instructor: {instructor}")
         total = sum(count_occurrences(row.get(col, ""), keyword)
                     for col in ["Aims", "LANGE_NAAM_NL"]  # "INHOUD",
                     if col in osiris_data.columns)
 
         if total > 0:
             scores[instructor] = scores.get(instructor, 0) + total
+
+    print("------------------")
+    print("scores done")
 
     return scores
 
