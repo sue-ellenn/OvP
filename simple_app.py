@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 import pandas as pd
 import re
 import spacy
@@ -11,7 +13,7 @@ nlp = spacy.load("nl_core_news_lg")
 repo_data = pd.read_csv("created_data/repository/emp_20251115_161743.csv")
 employee_data = pd.read_csv("created_data/employees/employees20251115_161743.csv")
 
-# @lru_cache(maxsize=50000)
+@lru_cache(maxsize=50000)
 def preprocess_cached(text: str):
     doc = nlp(text)
     tokens = [t.lemma_ for t in doc if not t.is_punct and not t.is_space]

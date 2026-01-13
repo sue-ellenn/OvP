@@ -85,6 +85,8 @@ import spacy
 import streamlit as st
 from functools import lru_cache
 from scraper import load_all_data
+from deep_translator import GoogleTranslator
+from langdetect import detect
 
 # Load small NLP model (tokenization, lemmatization)
 nlp = spacy.load("nl_core_news_lg")
@@ -154,6 +156,48 @@ def compute_scores(keyword, employee_data, repo_data, osiris_data):
             scores[instructor] = scores.get(instructor, 0) + total
 
     return scores
+
+
+def simple_search(employee_data, repo_data, osiris_data, keyword):
+    final_dict = {}
+    data = [employee_data, repo_data, osiris_data]
+    # iterate over data
+    for d in data:
+        print("------------------------------------------")
+        cols = d.columns.tolist()
+        for i, row in d.iterrows():
+            # print(f"{i}: {row}")
+            count = 0
+            name = ""
+            for j, col in enumerate(cols):
+                # print(f"{j}: {col}")
+                if col in ["authors", "Name", "DOCENT_ROL"]:
+                    name = row[col]
+                    # print(f"name: {name}")
+                    continue
+
+                # print(f"Row: {row[col]}")
+                if name in final_dict.keys():
+                    count = final_dict[name]
+
+                if pd.isna(row[col]):
+                    continue
+
+                if isinstance(row[col], list):
+                    temp_text = " ".join(row[col])
+                else:
+                    temp_text = row[col]
+
+                # print(f"type: {type(temp_text)}")
+
+                if keyword in temp_text.lower():
+                    count += temp_text.count(keyword)
+
+            if count > 0:
+                print(f"{name}: {count}\n")
+                final_dict[name] = count
+    return final_dict
+
 
 def run_streamlit_ui(employee_data, repo_data, osiris_data):
     st.set_page_config(page_title="", layout="wide")
@@ -240,20 +284,42 @@ def run_streamlit_ui(employee_data, repo_data, osiris_data):
     # st.markdown('<img src="app_layouts/RU_LOGO_COMPLEET.png" class="big-logo">', unsafe_allow_html=True)
 
     st.title("Keyword Search Across Databases")
+    st.write("EN: This tool is the first version of a tool created for Radboud Universiteit - Onderwijs voor Professionals (OvP).\n"
+             "It works best when using singular keywords such as 'ethics' or 'artificial intelligence'.\n"
+             "Try to avoid full phrases like 'I\'m looking for ...'")
+
+    st.write(
+        "NL: Deze tool is de eerste versie van een ontwikkeling gedaan voor Radboud Universiteit - Onderwijs voor Professionals (OvP).\n"
+        "Het werkt het beste op simpele trefwoorden zoals 'ethiek' of 'artificial intelligence'.\n"
+        "Probeer zinnen zoals 'ik ben op zoek naar ...' te vermijden.")
+
+
     keyword = st.text_input("Enter keyword")
+
+    translated = GoogleTranslator(source='auto', target='nl').translate(keyword)
+
+    key_dict = simple_search(employee_data, repo_data, osiris_data, keyword)
+    t_dict2 = simple_search(employee_data, repo_data, osiris_data, translated)
+
     max_results = st.number_input("Max results", min_value=5, value=5)
 
     if st.button("Search"):
-        scores = compute_scores(keyword, employee_data, repo_data, osiris_data)
+        st.write("Search results:")
+        st.write(key_dict)
 
-        if not scores:
-            st.write("No results found.")
-            return
+        st.write("Search results:")
+        st.write(t_dict2)
+        # scores = compute_scores(keyword, employee_data, repo_data, osiris_data)
+        #
+        # if not scores:
+        #     st.write("No results found.")
+        #     return
+        #
+        # ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        # st.subheader("Results")
+        # for name, score in ranked[:max_results]:
+        #     st.write(f"**{name}** — {score} occurrences")
 
-        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        st.subheader("Results")
-        for name, score in ranked[:max_results]:
-            st.write(f"**{name}** — {score} occurrences")
 
 run_streamlit_ui(employee_data, repo_data, osiris_data)
 
