@@ -11,9 +11,10 @@ nlp = spacy.load("nl_core_news_lg")
 
 # osiris_data, repo_data, employee_data = load_all_data()
 
-repo_data = pd.read_csv("created_data/repository/emp_20251115_161743.csv")
-employee_data = pd.read_csv("created_data/employees/employees20251115_161743.csv")
-osiris_data = pd.read_excel("created_data/CORRECT_DATA/raw_data.xlsx")
+repo_data = pd.read_csv("created_data/cleaned_data/repo.csv")
+employee_data = pd.read_csv("created_data/cleaned_data/employee.csv")
+osiris_data = pd.read_csv("created_data/cleaned_data/osiris.csv")
+
 
 @lru_cache(maxsize=50000)
 def preprocess_cached(text: str):
@@ -40,7 +41,7 @@ def compute_scores(keyword, employee_data, repo_data, osiris_data):
     print("Employee data")
     for _, row in employee_data.iterrows():
         name = row.get("Name", "Unknown")
-        # print("Name:", name)
+        print("Name:", name)
 
         total = 0
         for col in ["Keywords", "Publicaties", "Onderwijs", "In de media", "Projecten"]:
@@ -92,17 +93,41 @@ def compute_scores(keyword, employee_data, repo_data, osiris_data):
 
     return scores
 
+def preprocess_file(data, name):
+
+    print("------------------------------")
+    cols = data.columns.tolist()
+    for i, row in data.iterrows():
+        print("---------------------")
+        print("Old: ", row)
+        for c in cols:
+            if 'url' in c.lower():
+                continue
+
+            row[c] = preprocess(row[c])
+        print("---------------------")
+        print("\nNew: ", row)
+        if i % 100 == 0:
+            print(i)
+            print("---------------------")
+
+
+    data.to_csv("created_data/cleaned_data/" + name + ".csv")
+    return
+
 def search_keyword_loop(employee_data, repo_data, osiris_data):
     # print("Type 'quit' to exit the keyword search.")
 
-    while True:
+    go = True
+    while go:
         print("------------------------------------------")
         print("Type 'quit' to exit the keyword search.")
         # keyword = input("Enter keyword to search: ").strip()
         keyword = "ethiek"
-        if keyword.lower() == "quit":
-            print("Exiting search loop.")
-            break
+        keyword = preprocess(keyword)
+        # if keyword.lower() == "quit":
+        #     print("Exiting search loop.")
+        #     break
 
         try:
             # max_results = int(input("Maximum results: "))
@@ -112,7 +137,7 @@ def search_keyword_loop(employee_data, repo_data, osiris_data):
             continue
 
         scores = compute_scores(keyword, employee_data, repo_data, osiris_data)
-
+        go = False
         if not scores:
             print(f"No results for '{keyword}'.")
             continue
@@ -120,11 +145,15 @@ def search_keyword_loop(employee_data, repo_data, osiris_data):
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
         print(f"Top {max_results} results for keyword '{keyword}':")
-
+        # go = False
         for name, score in ranked[:max_results]:
             print(f"{name}: {score}\n")
-
+        break
         # print()
 
-search_keyword_loop(employee_data, repo_data, osiris_data)
+print(osiris_data.columns.tolist())
+print(employee_data.columns.tolist())
+print(repo_data.columns.tolist())
 
+# search_keyword_loop(employee_data, repo_data, osiris_data)
+#  uv run simple_app.py
