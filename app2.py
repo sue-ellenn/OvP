@@ -4,7 +4,33 @@ import sqlite3
 import numpy as np
 from sentence_transformers import SentenceTransformer
 import pandas as pd
+import requests
+from pathlib import Path
 
+# pd.read_csv("created_data/cleaned_data/repo.csv").to_parquet('created_data/cleaned_data/repo.parquet', compression="snappy")
+
+FILES = {
+    "search.db": "https://github.com/sue-ellenn/OvP/releases/download/data/search.db",
+    "embeddings.npy": "https://github.com/sue-ellenn/OvP/releases/download/data/embeddings.npy",
+    "meta.npy": "https://github.com/sue-ellenn/OvP/releases/download/data/meta.npy"
+}
+
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+
+# @st.cache_resource
+# def load_repo():
+#     if not REPO_PATH.exists():
+#         with st.spinner("Downloading repository data..."):
+#             r = requests.get(REPO_URL)
+#             r.raise_for_status()
+#             REPO_PATH.write_bytes(r.content)
+#     return pd.read_parquet(REPO_PATH)
+
+# return pd.read_parquet(REPO_PATH)
+
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
 DB_PATH = "search.db"
 EMBEDDINGS_PATH = "created_data/DB_backups/embeddings.npy"
 
@@ -13,6 +39,20 @@ TOP_FINAL = 20
 MAX_PUBLICATIONS = 20
 MAX_COURSES = 20
 
+
+def download_if_missing():
+    for fname, url in FILES.items():
+        path = DATA_DIR / fname
+        if not path.exists():
+            with st.spinner(f"Downloading {fname}..."):
+                r = requests.get(url, stream=True)
+                r.raise_for_status()
+                with open(path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+
+# download_if_missing()
 
 def cosine_sim(a, b):
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
@@ -64,30 +104,33 @@ def get_docent_cursussen(name, O, max_items=3):
     )
     return O[mask][["CURSUS", "LANGE_NAAM_NL", "DOEL"]].head(max_items)
 
+
 def get_osiris_course(course_code, O):
     row = O[O["CURSUS"] == course_code]
     return None if row.empty else row.iloc[0]
+
 
 def get_repository_record(title, R):
     row = R[R["title"] == title]
     return None if row.empty else row.iloc[0]
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def load_resources():
-    conn = sqlite3.connect("search.db", check_same_thread=False)
-    emb = np.load("created_data/DB_backups/embeddings.npy")
-    meta = np.load("meta.npy", allow_pickle=True)
+    download_if_missing()
+    conn = sqlite3.connect(DATA_DIR / "search.db", check_same_thread=False)
+    emb = np.load(DATA_DIR / "embeddings.npy", mmap_mode="r")
+    meta = np.load(DATA_DIR / "meta.npy", allow_pickle=True)
     model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
 
-    R = pd.read_csv("created_data/cleaned_data/repo.csv")
+    R = pd.read_parquet("created_data/cleaned_data/repo.parquet")
     E = pd.read_csv("created_data/cleaned_data/employee.csv")
     O = pd.read_csv("created_data/cleaned_data/osiris.csv")
 
-    return conn, emb, model, E, O, R
+    return conn, emb, meta, model, E, O, R
 
 
-conn, embeddings, model, E, O, R = load_resources()
+conn, embeddings, meta, model, E, O, R = load_resources()
 
 
 def run_search(query):
@@ -111,7 +154,7 @@ def run_search(query):
         return df
 
     q_emb = model.encode(query)
-
+    # try:
     df["semantic_score"] = [
         cosine_sim(q_emb, embeddings[rowid - 1])
         for rowid in df["rowid"]
@@ -120,6 +163,10 @@ def run_search(query):
     return df.sort_values(
         "semantic_score", ascending=False
     ).head(TOP_FINAL)
+
+    # except:
+    #     return None
+
 
 def render_single_result(row, E, O, R):
     name = row["name"]
@@ -177,40 +224,39 @@ def render_single_result(row, E, O, R):
             st.markdown(f"**Doel:** {course['DOEL']}")
 
     # repo
-    elif source == "Research":
+    elif source == "Repo":
         rec = get_repository_record(name, R)
-        st.write(rec.columns)
+        # st.write(rec)
 
         if rec is None:
             st.markdown("_Geen publicatiedetails gevonden._")
             return
 
         # Title
-        st.markdown(f"### {rec['title']}")
+        # st.markdown(f"### {rec['title']}")
+        # # st.write(rec.columns)
 
         # Authors
-        if pd.notna(rec.get("authors")):
+        if rec.get('authors') is not None:
             st.markdown(f"**Auteurs:** {rec['authors']}")
 
         # Department
-        if pd.notna(rec.get("department")):
+        if rec.get('department') is not None:
             st.markdown(f"**Afdeling:** {rec['department']}")
 
         # Keywords
-        if pd.notna(rec.get("keywords")):
+        if rec.get("keywords") is not None:
             st.markdown(f"**Trefwoorden:** {rec['keywords']}")
 
         # Publication info
-        if pd.notna(rec.get("publishing_info")):
+        if rec.get("publishing_info") is not None:
             st.markdown(f"**Publicatie:** {rec['publishing_info']}")
 
         # Link
-        if pd.notna(rec.get("title_url")):
+        if rec.get("title_url") is not None:
             st.markdown(f"[Bekijk publicatie]({rec['title_url']})")
 
         # course = get_repo(name, O)
-
-
 
 
 # ----------------------------
@@ -256,98 +302,85 @@ st.warning(
     "NL: Deze tool is de eerste versie van een ontwikkeling gedaan voor Radboud Universiteit - Onderwijs voor Professionals (OvP).\n"
     "Het werkt het beste op simpele trefwoorden zoals 'ethiek' of 'artificial intelligence'.\n"
     "Probeer zinnen zoals 'ik ben op zoek naar ...' te vermijden.", icon="⚠️"
-    )
+)
 
 # st.warning(
 #         "NL: Deze tool is de eerste versie van een ontwikkeling gedaan voor Radboud Universiteit - Onderwijs voor Professionals (OvP).\n"
 #         "Het werkt het beste op simpele trefwoorden zoals 'ethiek' of 'artificial intelligence'.\n"
 #         "Probeer zinnen zoals 'ik ben op zoek naar ...' te vermijden.")
 
-
 query = st.text_input("Zoekterm(en)/\nSearch term(s)")
+maximum = st.number_input("Max resultaten/results", min_value=1, max_value=150, value=20)
 
 if query:
-    # sql = """
-    # SELECT rowid, name, source, bm25(search) AS rank
-    # FROM search
-    # WHERE search MATCH ?
-    # ORDER BY rank
-    # LIMIT 100
-    # """
-    #
-    # df = pd.read_sql_query(sql, conn, params=(query,))
-    # q_emb = model.encode(query)
-    #
-    # df["semantic_score"] = [
-    #     np.dot(q_emb, embeddings[rowid - 1])
-    #     for rowid in df["rowid"]
-    # ]
-    #
-    # df = df.sort_values("semantic_score", ascending=False).head(20)
-    #
-    # for _, r in df.iterrows():
-    #     st.markdown(f"""
-    #     ### {r['name']}
-    #     **Bron:** {r['source']}
-    #     """)
     results = run_search(query)
-
-    TAB_LIMITS = {
-        "All": 20,
-        "Osiris": 5,
-        "Employees": 5,
-        "Repo": 5,
-    }
-    # st.write(results.columns)
-
-    # Normalize BM25 rank (lower is better)
-    results["bm25_score"] = 1 / (1 + results["rank"])
-
-    # If semantic_score exists, combine it
-    if "semantic_score" in results.columns:
-        results["final_score"] = (
-                0.6 * results["semantic_score"] +
-                0.4 * results["bm25_score"]
-        )
+    if results is None:
+        st.markdown("_Geen publicatiedetails gevonden._")
+        st.warning("Keyword not found. Try a different one.", icon="❗❗❗")
     else:
-        results["final_score"] = results["bm25_score"]
+        TAB_LIMITS = {
+            "All": maximum,
+            "Osiris": max(5, maximum),
+            "Employees": max(5, maximum),
+            "Repo": max(5, maximum),
+        }
+        # st.write(results.columns)
 
-    # Ensure ordering
-    results = results.sort_values("semantic_score", ascending=False)
+        # Normalize BM25 rank (lower is better)
+        results["bm25_score"] = 1 / (1 + results["rank"])
 
-    # Per-source subsets
-    results_O = results[results["source"] == "Osiris"].head(TAB_LIMITS["Osiris"])
-    results_E = results[results["source"] == "Employees"].head(TAB_LIMITS["Employees"])
-    results_R = results[results["source"] == "Repo"].head(TAB_LIMITS["Repo"])
+        # If semantic_score exists, combine it
+        if "semantic_score" in results.columns:
+            results["final_score"] = (
+                    0.6 * results["semantic_score"] +
+                    0.4 * results["bm25_score"]
+            )
+        else:
+            results["final_score"] = results["bm25_score"]
 
-    # Alles tab: interleaved, capped at 20
-    results_all = (
-        pd.concat([results_E, results_O, results_R])
-        .sort_values("final_score", ascending=False)
-        .head(TAB_LIMITS["All"])
-    )
+        try:
+            # Ensure ordering
+            results = results.sort_values("semantic_score", ascending=False)
 
-    if results.empty:
-        st.warning("No matches found.")
-    else:
-        tabs = st.tabs(["All", "Osiris", "Employees", "Repository"])
+            # Per-source subsets
+            results_O = results[results["source"] == "Osiris"].head(TAB_LIMITS["Osiris"])
+            results_E = results[results["source"] == "Employees"].head(TAB_LIMITS["Employees"])
+            results_R = results[results["source"] == "Repo"].head(TAB_LIMITS["Repo"])
 
-        with tabs[0]:
-            for _, row in results_all.iterrows():
-                render_single_result(row, E, O, R)
-                st.markdown("---")
+            # Alles tab: interleaved, capped at 20
+            results_all = (
+                pd.concat([results_E, results_O, results_R])
+                .sort_values("final_score", ascending=False)
+                .head(TAB_LIMITS["All"])
+            )
 
-        with tabs[1]:
-            for _, row in results_O.iterrows():
-                render_single_result(row, E, O, R)
-                st.markdown("---")
+            if results.empty:
+                st.warning("No matches found.")
+            else:
+                tabs = st.tabs(["All", "Osiris", "Employees", "Repository"])
 
-        with tabs[2]:
-            for _, row in results_E.iterrows():
-                render_single_result(row, E, O, R)
-                st.markdown("---")
+                with tabs[0]:
+                    for _, row in results_all.iterrows():
+                        render_single_result(row, E, O, R)
+                        st.markdown("---")
 
-        with tabs[3]:
-            for _, row in results_R.iterrows():
-                render_single_result(row, E, O, R)
-                st.markdown("---")
+                with tabs[1]:
+                    for _, row in results_O.iterrows():
+                        render_single_result(row, E, O, R)
+                        st.markdown("---")
+
+                with tabs[2]:
+                    for _, row in results_E.iterrows():
+                        render_single_result(row, E, O, R)
+                        st.markdown("---")
+
+                with tabs[3]:
+                    for _, row in results_R.iterrows():
+                        render_single_result(row, E, O, R)
+                        st.markdown("---")
+        except Exception as e:
+            st.write("No matches found.")
+            st.warning("Invalid input", icon="❗")
+            # st.write(e)
+
+# streamlit run app2.py --server.runOnSave true
