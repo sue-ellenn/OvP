@@ -2,3 +2,7 @@
 *.excel
 *.xlsx
 *.docx
+search.db
+created_data/DB_backups/embeddings.npy
+*.npy
+*.db

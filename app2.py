@@ -35,9 +35,7 @@ DB_PATH = "search.db"
 EMBEDDINGS_PATH = "created_data/DB_backups/embeddings.npy"
 
 TOP_FTS = 100
-TOP_FINAL = 20
-MAX_PUBLICATIONS = 20
-MAX_COURSES = 20
+TOP_FINAL = 0
 
 
 def download_if_missing():
@@ -62,9 +60,11 @@ def build_fts_query(user_query: str) -> str:
     terms = user_query.strip().split()
     if len(terms) == 1:
         return terms[0]
-    phrase = f"\"{' '.join(terms)}\""
+    exact = f'"{user_query}"'
     and_query = " AND ".join(terms)
-    return f"{phrase} OR ({and_query})"
+    or_query = " OR ".join(terms)
+
+    return f"{exact} OR ({and_query}) OR ({or_query})"
 
 
 def normalize_name(name):
@@ -136,36 +136,117 @@ conn, embeddings, meta, model, E, O, R = load_resources()
 def run_search(query):
     fts_query = build_fts_query(query)
 
-    sql = """
-    SELECT rowid, name, source, bm25(search) AS rank
-    FROM search
-    WHERE search MATCH ?
-    ORDER BY rank
-    LIMIT ?
-    """
-
-    df = pd.read_sql_query(
-        sql,
-        conn,
-        params=(fts_query, TOP_FTS)
-    )
-
-    if df.empty:
-        return df
+    sources = ["Employees", "Osiris", "Repo"]
+    dfs = []
 
     q_emb = model.encode(query)
-    # try:
-    df["semantic_score"] = [
-        cosine_sim(q_emb, embeddings[rowid - 1])
-        for rowid in df["rowid"]
-    ]
 
-    return df.sort_values(
-        "semantic_score", ascending=False
-    ).head(TOP_FINAL)
+    for source in sources:
+        df = pd.read_sql_query(
+            """
+            SELECT rowid, name, source, bm25(search) AS rank
+            FROM search
+            WHERE search MATCH ?
+            AND source = ?
+            ORDER BY rank
+            LIMIT ?
+            """,
+            conn,
+            params=(fts_query, source, TOP_FTS)
+        )
+
+        if df.empty:
+            continue
+
+        # BM25 normalization
+        df["bm25_score"] = 1 / (1 + df["rank"])
+
+        # Semantic similarity
+        df["semantic_score"] = [
+            cosine_sim(q_emb, embeddings[rowid - 1])
+            for rowid in df["rowid"]
+        ]
+
+        # Exact match boost
+        df["exact_match"] = df["name"].str.lower().str.contains(query.lower())
+
+        # Final score
+        df["final_score"] = (
+                0.5 * df["semantic_score"] +
+                0.4 * df["bm25_score"] +
+                0.3 * df["exact_match"].astype(int)
+        )
+
+        # Length penalty (reduce repo dominance)
+        df["final_score"] -= 0.0005 * df["name"].str.len()
+
+        # Per source top 20
+        df = df.sort_values("final_score", ascending=False).head(TOP_FINAL)
+
+        dfs.append(df)
+
+    if not dfs:
+        st.write("BIG ERROR!!!!!!!!!!!!!!!!!!!!!")
+        return pd.DataFrame()
+
+    return dfs
 
     # except:
     #     return None
+
+
+def expand_query_with_user_input(query, selected_terms):
+    return " ".join([query] + selected_terms)
+
+
+def get_query_suggestions(query, meta, embeddings, model, top_k=10):
+    q_emb = model.encode(query)
+
+    sims = np.dot(embeddings, q_emb) / (
+            np.linalg.norm(embeddings, axis=1) * np.linalg.norm(q_emb)
+    )
+
+    top_idx = np.argsort(sims)[-top_k:][::-1]
+
+    suggestions = list({
+        str(meta[i]["name"]) for i in top_idx
+        if "name" in meta[i]
+    })
+
+    return suggestions
+
+
+def get_suggestions_from_results(df):
+    words = []
+
+    for name in df["name"].head(20):
+        words.extend(str(name).lower().split())
+
+    words = [w for w in words if len(w) > 4]
+
+    return list(set(words))[:10]
+
+
+def interleave(dfs, max_total):
+    result = []
+    pointers = [0] * len(dfs)
+
+    while len(result) < max_total:
+        added = False
+
+        for i, df in enumerate(dfs):
+            if pointers[i] < len(df):
+                result.append(df.iloc[pointers[i]])
+                pointers[i] += 1
+                added = True
+
+                if len(result) >= max_total:
+                    break
+
+        if not added:
+            break
+
+    return pd.DataFrame(result)
 
 
 def render_single_result(row, E, O, R):
@@ -262,6 +343,8 @@ def render_single_result(row, E, O, R):
 # ----------------------------
 # UI building
 st.set_page_config(page_title="", layout="wide")
+if "selected_terms" not in st.session_state:
+    st.session_state.selected_terms = []
 
 
 def get_base64_image(image_path):
@@ -309,78 +392,137 @@ st.warning(
 #         "Het werkt het beste op simpele trefwoorden zoals 'ethiek' of 'artificial intelligence'.\n"
 #         "Probeer zinnen zoals 'ik ben op zoek naar ...' te vermijden.")
 
-query = st.text_input("Zoekterm(en)/\nSearch term(s)")
-maximum = st.number_input("Max resultaten/results", min_value=1, max_value=150, value=20)
+query = st.text_input("Zoekterm(en)/Search term(s)")
+TOP_FINAL = st.number_input("Max resultaten/results", min_value=1, max_value=150, value=50)
+
+selected_terms = []
 
 if query:
-    results = run_search(query)
-    if results is None:
+    # Eerste snelle search voor suggestions
+    initial_dfs = run_search(query)
+
+    if initial_dfs:
+        initial_results = pd.concat(initial_dfs)
+
+        # Suggestions ophalen
+        suggestions_sem = get_query_suggestions(query, meta, embeddings, model)
+        suggestions_kw = get_suggestions_from_results(initial_results)
+
+        suggestions = list(set(suggestions_sem + suggestions_kw))[:10]
+
+        # selected_terms = st.multiselect(
+        #             "Bedoelde je misschien / Related terms:",
+        #             suggestions
+        #         )
+        # start
+        st.markdown("**Bedoelde je misschien / Related terms:**")
+
+        cols = st.columns(5)  # aantal blokjes per rij
+
+        for i, term in enumerate(suggestions):
+            col = cols[i % 5]
+
+            is_selected = term in st.session_state.selected_terms
+
+            if col.button(
+                    term,
+                    key=f"suggestion_{term}",
+                    use_container_width=True
+            ):
+                if is_selected:
+                    st.session_state.selected_terms.remove(term)
+                else:
+                    st.session_state.selected_terms.append(term)
+
+        if st.session_state.selected_terms:
+            st.write("Geselecteerd:", ", ".join(st.session_state.selected_terms))
+        # stop
+
+if query:
+    # expanded_query = expand_query_with_user_input(query, selected_terms)
+    expanded_query = expand_query_with_user_input(
+        query,
+        st.session_state.selected_terms
+    )
+    dfs = run_search(expanded_query)
+
+    if not dfs:
         st.markdown("_Geen publicatiedetails gevonden._")
         st.warning("Keyword not found. Try a different one.", icon="❗❗❗")
     else:
         TAB_LIMITS = {
-            "All": maximum,
-            "Osiris": max(5, maximum),
-            "Employees": max(5, maximum),
-            "Repo": max(5, maximum),
+            "All": TOP_FINAL * 2,
+            "Osiris": max(5, TOP_FINAL),
+            "Employees": max(5, TOP_FINAL),
+            "Repo": max(5, TOP_FINAL),
         }
         # st.write(results.columns)
+        #
+        # # Normalize BM25 rank (lower is better)
+        # results["bm25_score"] = 1 / (1 + results["rank"])
 
-        # Normalize BM25 rank (lower is better)
-        results["bm25_score"] = 1 / (1 + results["rank"])
+        # print(results["bm25_score"])
+        # print(results["semantic_score"])
+        # st.columns(results["bm25_score"])
 
+        # upscale employee db
+        # for r in results:
+        #     if r in ["rowid", "name"] :
+        #         continue
+        #     st.markdown(f"**{r}**")
+        # if r["source"] == "Employees":
+        #     r["bm25_score"] = r["bm25_score"] * 1.5
+
+
+        # st.write(results["source"].value_counts())
         # If semantic_score exists, combine it
-        if "semantic_score" in results.columns:
-            results["final_score"] = (
-                    0.6 * results["semantic_score"] +
-                    0.4 * results["bm25_score"]
-            )
-        else:
-            results["final_score"] = results["bm25_score"]
+        # if "semantic_score" in results.columns:
+        #     results["final_score"] = (
+        #             0.6 * results["semantic_score"] +
+        #             0.4 * results["bm25_score"]
+        #     )
+        # else:
+        #     results["final_score"] = results["bm25_score"]
 
-        try:
-            # Ensure ordering
-            results = results.sort_values("semantic_score", ascending=False)
+        # try:
+        # combineer alle dataframes voor globale sortering indien nodig
+        results = pd.concat(dfs).sort_values("semantic_score", ascending=False)
 
-            # Per-source subsets
-            results_O = results[results["source"] == "Osiris"].head(TAB_LIMITS["Osiris"])
-            results_E = results[results["source"] == "Employees"].head(TAB_LIMITS["Employees"])
-            results_R = results[results["source"] == "Repo"].head(TAB_LIMITS["Repo"])
+        # per bron
+        results_E = next((df for df in dfs if df["source"].iloc[0] == "Employees"), pd.DataFrame())
+        results_O = next((df for df in dfs if df["source"].iloc[0] == "Osiris"), pd.DataFrame())
+        results_R = next((df for df in dfs if df["source"].iloc[0] == "Repo"), pd.DataFrame())
 
-            # Alles tab: interleaved, capped at 20
-            results_all = (
-                pd.concat([results_E, results_O, results_R])
-                .sort_values("final_score", ascending=False)
-                .head(TAB_LIMITS["All"])
-            )
+        # mix results
+        results_all = interleave(
+            [results_E, results_O, results_R],
+            TOP_FINAL
+        )
 
-            if results.empty:
-                st.warning("No matches found.")
-            else:
-                tabs = st.tabs(["All", "Osiris", "Employees", "Repository"])
+        tabs = st.tabs(["All", "Osiris", "Employees", "Repository"])
 
-                with tabs[0]:
-                    for _, row in results_all.iterrows():
-                        render_single_result(row, E, O, R)
-                        st.markdown("---")
+        with tabs[0]:
+            for _, row in results_all.iterrows():
+                render_single_result(row, E, O, R)
+                st.markdown("---")
 
-                with tabs[1]:
-                    for _, row in results_O.iterrows():
-                        render_single_result(row, E, O, R)
-                        st.markdown("---")
+        with tabs[1]:
+            for _, row in results_O.iterrows():
+                render_single_result(row, E, O, R)
+                st.markdown("---")
 
-                with tabs[2]:
-                    for _, row in results_E.iterrows():
-                        render_single_result(row, E, O, R)
-                        st.markdown("---")
+        with tabs[2]:
+            for _, row in results_E.iterrows():
+                render_single_result(row, E, O, R)
+                st.markdown("---")
 
-                with tabs[3]:
-                    for _, row in results_R.iterrows():
-                        render_single_result(row, E, O, R)
-                        st.markdown("---")
-        except Exception as e:
-            st.write("No matches found.")
-            st.warning("Invalid input", icon="❗")
-            # st.write(e)
+        with tabs[3]:
+            for _, row in results_R.iterrows():
+                render_single_result(row, E, O, R)
+                st.markdown("---")
+    # except Exception as e:
+    #     st.write("No matches found.")
+    #     st.warning("Invalid input", icon="❗")
+    #     # st.write(e)
 
 # streamlit run app2.py --server.runOnSave true
