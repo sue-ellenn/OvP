@@ -186,7 +186,7 @@ def run_search(query):
         dfs.append(df)
 
     if not dfs:
-        st.write("BIG ERROR!!!!!!!!!!!!!!!!!!!!!")
+        # st.write("BIG ERROR!!!!!!!!!!!!!!!!!!!!!")
         return pd.DataFrame()
 
     return dfs
@@ -397,54 +397,54 @@ TOP_FINAL = st.number_input("Max resultaten/results", min_value=1, max_value=150
 
 selected_terms = []
 
-if query:
+# if query:
     # Eerste snelle search voor suggestions
-    initial_dfs = run_search(query)
-
-    if initial_dfs:
-        initial_results = pd.concat(initial_dfs)
-
-        # Suggestions ophalen
-        suggestions_sem = get_query_suggestions(query, meta, embeddings, model)
-        suggestions_kw = get_suggestions_from_results(initial_results)
-
-        suggestions = list(set(suggestions_sem + suggestions_kw))[:10]
-
-        # selected_terms = st.multiselect(
-        #             "Bedoelde je misschien / Related terms:",
-        #             suggestions
-        #         )
-        # start
-        st.markdown("**Bedoelde je misschien / Related terms:**")
-
-        cols = st.columns(5)  # aantal blokjes per rij
-
-        for i, term in enumerate(suggestions):
-            col = cols[i % 5]
-
-            is_selected = term in st.session_state.selected_terms
-
-            if col.button(
-                    term,
-                    key=f"suggestion_{term}",
-                    use_container_width=True
-            ):
-                if is_selected:
-                    st.session_state.selected_terms.remove(term)
-                else:
-                    st.session_state.selected_terms.append(term)
-
-        if st.session_state.selected_terms:
-            st.write("Geselecteerd:", ", ".join(st.session_state.selected_terms))
-        # stop
+    # initial_dfs = run_search(query)
+    #
+    # if initial_dfs:
+    #     initial_results = pd.concat(initial_dfs)
+    #
+    #     # Suggestions ophalen
+    #     suggestions_sem = get_query_suggestions(query, meta, embeddings, model)
+    #     suggestions_kw = get_suggestions_from_results(initial_results)
+    #
+    #     suggestions = list(set(suggestions_sem + suggestions_kw))[:10]
+    #
+    #     # selected_terms = st.multiselect(
+    #     #             "Bedoelde je misschien / Related terms:",
+    #     #             suggestions
+    #     #         )
+    #     # start
+    #     st.markdown("**Bedoelde je misschien / Related terms:**")
+    #
+    #     cols = st.columns(5)  # aantal blokjes per rij
+    #
+    #     for i, term in enumerate(suggestions):
+    #         col = cols[i % 5]
+    #
+    #         is_selected = term in st.session_state.selected_terms
+    #
+    #         if col.button(
+    #                 term,
+    #                 key=f"suggestion_{term}",
+    #                 use_container_width=True
+    #         ):
+    #             if is_selected:
+    #                 st.session_state.selected_terms.remove(term)
+    #             else:
+    #                 st.session_state.selected_terms.append(term)
+    #
+    #     if st.session_state.selected_terms:
+    #         st.write("Geselecteerd:", ", ".join(st.session_state.selected_terms))
+    #     # stop
 
 if query:
     # expanded_query = expand_query_with_user_input(query, selected_terms)
-    expanded_query = expand_query_with_user_input(
-        query,
-        st.session_state.selected_terms
-    )
-    dfs = run_search(expanded_query)
+    # expanded_query = expand_query_with_user_input(
+    #     query,
+    #     st.session_state.selected_terms
+    # )
+    dfs = run_search(query)
 
     if not dfs:
         st.markdown("_Geen publicatiedetails gevonden._")
