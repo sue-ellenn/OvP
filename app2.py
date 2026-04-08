@@ -6,6 +6,8 @@ from sentence_transformers import SentenceTransformer
 import pandas as pd
 import requests
 from pathlib import Path
+from io import BytesIO
+import requests
 
 # pd.read_csv("created_data/cleaned_data/repo.csv").to_parquet('created_data/cleaned_data/repo.parquet', compression="snappy")
 
@@ -14,6 +16,7 @@ FILES = {
     "embeddings.npy": "https://github.com/sue-ellenn/OvP/releases/download/data/embeddings.npy",
     "meta.npy": "https://github.com/sue-ellenn/OvP/releases/download/data/meta.npy"
 }
+# https://github.com/sue-ellenn/OvP/releases/download/data/embeddings.npy
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -32,7 +35,13 @@ DATA_DIR.mkdir(exist_ok=True)
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 DB_PATH = "search.db"
-EMBEDDINGS_PATH = "created_data/DB_backups/embeddings.npy"
+EMBEDDINGS_PATH = FILES["embeddings.npy"]
+
+response = requests.get(EMBEDDINGS_PATH)
+response.raise_for_status()
+
+embeddings = np.load(BytesIO(response.content))
+embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
 
 TOP_FTS = 100
 TOP_FINAL = 0
@@ -132,6 +141,8 @@ def load_resources():
 
 conn, embeddings, meta, model, E, O, R = load_resources()
 
+def normalize(v):
+    return v / np.linalg.norm(v)
 
 # expanded query search
 # def run_search(query):
@@ -194,13 +205,65 @@ conn, embeddings, meta, model, E, O, R = load_resources()
 #
 #     # except:
 #     #     return None
+
+def get_similar_terms(query, model, embeddings, meta, top_k=5):
+    q_emb = model.encode(query)
+    q_emb = q_emb / np.linalg.norm(q_emb)
+
+    sims = np.dot(embeddings, q_emb)
+
+    top_idx = np.argsort(sims)[-top_k:][::-1]
+
+    similar_terms = []
+    for i in top_idx:
+        text = str(meta[i])
+
+        # pak eerste paar woorden als representatie
+        term = text.split(" ")[:3]
+        similar_terms.append(" ".join(term))
+
+    return list(set(similar_terms))
+
 def run_search(query):
     fts_query = build_fts_query(query)
 
     sources = ["Employees", "Osiris", "Repo"]
     dfs = []
 
-    q_emb = model.encode(query)
+    expanded_queries = expand_query(query, model, embeddings, meta)
+    with st.expander("**Actual query:**"):
+        st.markdown(f"{expanded_queries}")
+    query_embeddings = [
+        model.encode(q) for q in expanded_queries
+    ]
+
+    # normaliseren (belangrijk!)
+    query_embeddings = [
+        q / np.linalg.norm(q) for q in query_embeddings
+    ]
+
+    # def max_sim(rowid):
+    #     doc_emb = embeddings[rowid - 1]
+    #     return max(
+    #         cosine_sim(q_emb, doc_emb)
+    #         for q_emb in query_embeddings
+    #     )
+
+    def max_sim(rowid):
+        doc_emb = embeddings[rowid - 1]
+
+        scores = []
+        for q, q_emb in zip(expanded_queries, query_embeddings):
+            score = cosine_sim(q_emb, doc_emb)
+
+            # boost originele query
+            if q == query:
+                score *= 1.2
+
+            scores.append(score)
+
+        return max(scores)
+
 
     for source in sources:
         df = pd.read_sql_query(
@@ -221,8 +284,13 @@ def run_search(query):
 
         df["bm25_score"] = 1 / (1 + df["rank"])
 
+        # df["semantic_score"] = [
+        #     cosine_sim(q_emb, embeddings[rowid - 1])
+        #     for rowid in df["rowid"]
+        # ]
+
         df["semantic_score"] = [
-            cosine_sim(q_emb, embeddings[rowid - 1])
+            max_sim(rowid)
             for rowid in df["rowid"]
         ]
 
@@ -237,6 +305,17 @@ def run_search(query):
         dfs.append(df)
 
     return pd.concat(dfs)
+
+
+def expand_query(query, model, embeddings, meta):
+    expansions = [query]
+
+    # alleen doen bij korte/vage queries
+    if len(query) <= 5:
+        similar = get_similar_terms(query, model, embeddings, meta, top_k=5)
+        expansions.extend(similar)
+
+    return list(set(expansions))
 
 def expand_query_with_user_input(query, selected_terms):
     return " ".join([query] + selected_terms)
@@ -435,6 +514,7 @@ st.warning(
 #         "Het werkt het beste op simpele trefwoorden zoals 'ethiek' of 'artificial intelligence'.\n"
 #         "Probeer zinnen zoals 'ik ben op zoek naar ...' te vermijden.")
 
+
 query = st.text_input("Zoekterm(en)/Search term(s)")
 TOP_FINAL = st.number_input("Max resultaten/results", min_value=1, max_value=150, value=50)
 
@@ -491,6 +571,7 @@ if query:
     # expanded search
     dfs = run_search(query)
 
+
     # if not dfs:
     if dfs is None:
         st.markdown("_Geen publicatiedetails gevonden._")
@@ -533,7 +614,8 @@ if query:
         # try:
         # combineer alle dataframes voor globale sortering indien nodig
         # results = pd.concat(dfs).sort_values("semantic_score", ascending=False)
-        results = dfs.sort_values("semantic_score", ascending=False)
+        # results = dfs.sort_values("semantic_score", ascending=False)
+        results = dfs.sort_values("final_score", ascending=False)
 
         # per bron
         results_O = results[results["source"] == "Osiris"].head(TAB_LIMITS["Osiris"])
