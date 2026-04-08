@@ -133,6 +133,67 @@ def load_resources():
 conn, embeddings, meta, model, E, O, R = load_resources()
 
 
+# expanded query search
+# def run_search(query):
+#     fts_query = build_fts_query(query)
+#
+#     sources = ["Employees", "Osiris", "Repo"]
+#     dfs = []
+#
+#     q_emb = model.encode(query)
+#
+#     for source in sources:
+#         df = pd.read_sql_query(
+#             """
+#             SELECT rowid, name, source, bm25(search) AS rank
+#             FROM search
+#             WHERE search MATCH ?
+#             AND source = ?
+#             ORDER BY rank
+#             LIMIT ?
+#             """,
+#             conn,
+#             params=(fts_query, source, TOP_FTS)
+#         )
+#
+#         if df.empty:
+#             continue
+#
+#         # BM25 normalization
+#         df["bm25_score"] = 1 / (1 + df["rank"])
+#
+#         # Semantic similarity
+#         df["semantic_score"] = [
+#             cosine_sim(q_emb, embeddings[rowid - 1])
+#             for rowid in df["rowid"]
+#         ]
+#
+#         # Exact match boost
+#         df["exact_match"] = df["name"].str.lower().str.contains(query.lower())
+#
+#         # Final score
+#         df["final_score"] = (
+#                 0.5 * df["semantic_score"] +
+#                 0.4 * df["bm25_score"] +
+#                 0.3 * df["exact_match"].astype(int)
+#         )
+#
+#         # Length penalty (reduce repo dominance)
+#         df["final_score"] -= 0.0005 * df["name"].str.len()
+#
+#         # Per source top 20
+#         df = df.sort_values("final_score", ascending=False).head(TOP_FINAL)
+#
+#         dfs.append(df)
+#
+#     if not dfs:
+#         # st.write("BIG ERROR!!!!!!!!!!!!!!!!!!!!!")
+#         return pd.DataFrame()
+#
+#     return dfs
+#
+#     # except:
+#     #     return None
 def run_search(query):
     fts_query = build_fts_query(query)
 
@@ -158,42 +219,24 @@ def run_search(query):
         if df.empty:
             continue
 
-        # BM25 normalization
         df["bm25_score"] = 1 / (1 + df["rank"])
 
-        # Semantic similarity
         df["semantic_score"] = [
             cosine_sim(q_emb, embeddings[rowid - 1])
             for rowid in df["rowid"]
         ]
 
-        # Exact match boost
-        df["exact_match"] = df["name"].str.lower().str.contains(query.lower())
-
-        # Final score
         df["final_score"] = (
-                0.5 * df["semantic_score"] +
-                0.4 * df["bm25_score"] +
-                0.3 * df["exact_match"].astype(int)
+            0.6 * df["semantic_score"] +
+            0.4 * df["bm25_score"]
         )
 
-        # Length penalty (reduce repo dominance)
-        df["final_score"] -= 0.0005 * df["name"].str.len()
-
-        # Per source top 20
-        df = df.sort_values("final_score", ascending=False).head(TOP_FINAL)
+        # 🔥 per bron top N pakken
+        df = df.sort_values("final_score", ascending=False).head(20)
 
         dfs.append(df)
 
-    if not dfs:
-        st.write("BIG ERROR!!!!!!!!!!!!!!!!!!!!!")
-        return pd.DataFrame()
-
-    return dfs
-
-    # except:
-    #     return None
-
+    return pd.concat(dfs)
 
 def expand_query_with_user_input(query, selected_terms):
     return " ".join([query] + selected_terms)
@@ -397,56 +440,59 @@ TOP_FINAL = st.number_input("Max resultaten/results", min_value=1, max_value=150
 
 selected_terms = []
 
-if query:
+# if query:
     # Eerste snelle search voor suggestions
-    initial_dfs = run_search(query)
-
-    if initial_dfs:
-        initial_results = pd.concat(initial_dfs)
-
-        # Suggestions ophalen
-        suggestions_sem = get_query_suggestions(query, meta, embeddings, model)
-        suggestions_kw = get_suggestions_from_results(initial_results)
-
-        suggestions = list(set(suggestions_sem + suggestions_kw))[:10]
-
-        # selected_terms = st.multiselect(
-        #             "Bedoelde je misschien / Related terms:",
-        #             suggestions
-        #         )
-        # start
-        st.markdown("**Bedoelde je misschien / Related terms:**")
-
-        cols = st.columns(5)  # aantal blokjes per rij
-
-        for i, term in enumerate(suggestions):
-            col = cols[i % 5]
-
-            is_selected = term in st.session_state.selected_terms
-
-            if col.button(
-                    term,
-                    key=f"suggestion_{term}",
-                    use_container_width=True
-            ):
-                if is_selected:
-                    st.session_state.selected_terms.remove(term)
-                else:
-                    st.session_state.selected_terms.append(term)
-
-        if st.session_state.selected_terms:
-            st.write("Geselecteerd:", ", ".join(st.session_state.selected_terms))
-        # stop
+    # initial_dfs = run_search(query)
+    #
+    # if initial_dfs:
+    #     initial_results = pd.concat(initial_dfs)
+    #
+    #     # Suggestions ophalen
+    #     suggestions_sem = get_query_suggestions(query, meta, embeddings, model)
+    #     suggestions_kw = get_suggestions_from_results(initial_results)
+    #
+    #     suggestions = list(set(suggestions_sem + suggestions_kw))[:10]
+    #
+    #     # selected_terms = st.multiselect(
+    #     #             "Bedoelde je misschien / Related terms:",
+    #     #             suggestions
+    #     #         )
+    #     # start
+    #     st.markdown("**Bedoelde je misschien / Related terms:**")
+    #
+    #     cols = st.columns(5)  # aantal blokjes per rij
+    #
+    #     for i, term in enumerate(suggestions):
+    #         col = cols[i % 5]
+    #
+    #         is_selected = term in st.session_state.selected_terms
+    #
+    #         if col.button(
+    #                 term,
+    #                 key=f"suggestion_{term}",
+    #                 use_container_width=True
+    #         ):
+    #             if is_selected:
+    #                 st.session_state.selected_terms.remove(term)
+    #             else:
+    #                 st.session_state.selected_terms.append(term)
+    #
+    #     if st.session_state.selected_terms:
+    #         st.write("Geselecteerd:", ", ".join(st.session_state.selected_terms))
+    #     # stop
 
 if query:
     # expanded_query = expand_query_with_user_input(query, selected_terms)
-    expanded_query = expand_query_with_user_input(
-        query,
-        st.session_state.selected_terms
-    )
-    dfs = run_search(expanded_query)
+    # expanded_query = expand_query_with_user_input(
+    #     query,
+    #     st.session_state.selected_terms
+    # )
 
-    if not dfs:
+    # expanded search
+    dfs = run_search(query)
+
+    # if not dfs:
+    if dfs is None:
         st.markdown("_Geen publicatiedetails gevonden._")
         st.warning("Keyword not found. Try a different one.", icon="❗❗❗")
     else:
@@ -486,12 +532,13 @@ if query:
 
         # try:
         # combineer alle dataframes voor globale sortering indien nodig
-        results = pd.concat(dfs).sort_values("semantic_score", ascending=False)
+        # results = pd.concat(dfs).sort_values("semantic_score", ascending=False)
+        results = dfs.sort_values("semantic_score", ascending=False)
 
         # per bron
-        results_E = next((df for df in dfs if df["source"].iloc[0] == "Employees"), pd.DataFrame())
-        results_O = next((df for df in dfs if df["source"].iloc[0] == "Osiris"), pd.DataFrame())
-        results_R = next((df for df in dfs if df["source"].iloc[0] == "Repo"), pd.DataFrame())
+        results_O = results[results["source"] == "Osiris"].head(TAB_LIMITS["Osiris"])
+        results_E = results[results["source"] == "Employees"].head(TAB_LIMITS["Employees"])
+        results_R = results[results["source"] == "Repo"].head(TAB_LIMITS["Repo"])
 
         # mix results
         results_all = interleave(
