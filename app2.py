@@ -7,6 +7,7 @@ import requests
 from database import *
 from utils import *
 from search import *
+
 # from build_course_mapping import *
 
 # pd.read_csv("created_data/cleaned_data/repo.csv").to_parquet('created_data/cleaned_data/repo.parquet', compression="snappy")
@@ -18,138 +19,143 @@ FILES = {
 }
 # https://github.com/sue-ellenn/OvP/releases/download/data/embeddings.npy
 
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(exist_ok=True)
+# DATA_DIR = Path("data")
+# DATA_DIR.mkdir(exist_ok=True)
+#
+# DATA_DIR = Path("data")
+# DATA_DIR.mkdir(exist_ok=True)
+# DB_PATH = "search.db"
+# # EMBEDDINGS_PATH = FILES["embeddings.npy"]
+# EMBEDDINGS_PATH = "data/embeddings.npy"
+#
+# response = requests.get(EMBEDDINGS_PATH)
+# response.raise_for_status()
+#
+# embeddings = np.load(BytesIO(response.content))
+# embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
 
-
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(exist_ok=True)
-DB_PATH = "search.db"
-EMBEDDINGS_PATH = FILES["embeddings.npy"]
-
-response = requests.get(EMBEDDINGS_PATH)
-response.raise_for_status()
-
-embeddings = np.load(BytesIO(response.content))
-embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
-
-TOP_FTS = 100
+TOP_FTS = 30
 TOP_FINAL = 0
 
-
-conn, embeddings, meta, model, E, O, R = load_resources()
-
+conn, embeddings, meta, model = load_resources()
 
 
-def render_single_result(row, E, O, R):
-    name = row["name"]
-    source = row["source"]
+def render_single_result(result, conn):
+    name = result["name"]
+    source = result["source"]
 
-    if source == "Osiris":
-        course = get_osiris_course(name, O)
-        name = course['LANGE_NAAM_NL']
+    # if source == "Osiris":
+    #     course = get_osiris_course(name, O)
+    #     name = course['LANGE_NAAM_NL']
 
-    st.markdown("### " + name)
-    name = row["name"]
-    st.caption(f"Bron: {source}")
+    # st.markdown("### " + name)
+    # st.caption(f"Bron: {source}")
 
     # employees
     if source == "Employees":
-        emp = E[E["Name"] == name]
-        if emp.empty:
-            st.markdown("_Geen profiel gevonden._")
+        employee = get_employee(name, conn)
+        if employee.empty:
+            st.markdown("_Geen medewerker gevonden._")
             return
 
-        emp_row = emp.iloc[0]
+        employee = employee.iloc[0]
 
-        # themas
-        themas = get_themas(emp_row)
-        if themas:
-            st.markdown("**Thema’s:** " + ", ".join(themas))
+        st.markdown(f"## {employee['name']}")
 
-        # onderwijs
-        cursussen = get_docent_cursussen(name, O)
-        if not cursussen.empty:
-            st.markdown("**Onderwijs:**")
-            for _, c in cursussen.iterrows():
-                st.markdown(f"- {c['LANGE_NAAM_NL']}")
+        if pd.notna(employee["url"]):
+            st.markdown(f"[Medewerkerspagina]({employee['url']})")
 
-        # publicaties
-        pubs = get_publicaties(name, R)
-        if not pubs.empty:
-            st.markdown("**Recente publicaties:**")
-            for _, p in pubs.iterrows():
-                st.markdown(f"- [{p['title']}]({p['title_url']})")
+        if pd.notna(employee["faculties"]):
+            st.markdown(f"**Faculteit:** {employee['faculties']}")
 
-    # osiris
+        if pd.notna(employee["onderzoeksthema"]):
+            st.markdown(f"**Onderzoeksthema:** {employee['onderzoeksthema']}")
+
+        if pd.notna(employee["onderzoeksgroep"]):
+            st.markdown(f"**Onderzoeksgroep:** {employee['onderzoeksgroep']}")
+
+        courses = get_courses_for_employee(employee["name"], conn)
+        if not courses.empty:
+            st.markdown("### Geeft onderwijs in:")
+
+            for _, course in courses.iterrows():
+                st.write(f"- {course['course']}")
+
+
     elif source == "Osiris":
-        course = get_osiris_course(name, O)
-        if course is None:
+        course = get_osiris_course(name, conn)
+
+        if course.empty:
             st.markdown("_Geen cursusdetails gevonden._")
             return
 
-        # st.markdown(f"**{course['LANGE_NAAM_NL']}**")
-        st.caption(f"Vakcode: {course['CURSUS']}")
-        st.markdown(f"**Docent(en):** {course['DOCENT_ROL']}")
-        employees = get_employees_for_course(
-            course["CURSUS"],
-            conn
-        )
+        course = course.iloc[0]
 
-        if employees:
+        st.caption(f"Vakcode: {course['cursus']}")
 
-            st.markdown("### Gerelateerde experts")
+        if pd.notna(course["lange_naam"]):
+            st.markdown(f"**Vaknaam:** {course['lange_naam']}")
 
-            for employee in employees:
-                with st.expander(employee):
+        # gekoppelde docenten
+
+        employees = get_employees_for_course(course["cursus"], conn)
+
+        if not employees.empty:
+
+            st.markdown("### Docenten")
+
+            for _, employee in employees.iterrows():
+
+                with st.expander(employee["employee"]):
+
+                    if pd.notna(employee["employee_url"]):
+                        st.markdown(f"[Medewerkerspagina]({employee['employee_url']})")
+
                     render_single_result(
-                        pd.Series({
-                            "name": employee,
+                        {
+                            "name": employee["employee"],
                             "source": "Employees"
-                        }),
-                        E,
-                        O,
-                        R
-                    )
+                        },
+                        conn)
 
-        with st.expander("Meer informatie"):
-            st.markdown(f"**Inhoud:** {course['INHOUD']}")
-            st.markdown(f"**Doel:** {course['DOEL']}")
+        # overige cursusinformatie
 
-    # repo
+        with st.expander("Meer informatie over vak"):
+
+            if pd.notna(course["inhoud"]):
+                st.markdown(f"**Inhoud:** {course['inhoud']}")
+
+            if pd.notna(course["doel"]):
+                st.markdown(f"**Doel:** {course['doel']}")
+
+
     elif source == "Repo":
-        rec = get_repository_record(name, R)
-        # st.write(rec)
 
-        if rec is None:
-            st.markdown("_Geen publicatiedetails gevonden._")
+        paper = get_repo_paper(name, conn)
+
+        if paper.empty:
+            st.markdown("_Geen publicatiegegevens gevonden._")
             return
 
-        # Title
-        # st.markdown(f"### {rec['title']}")
-        # # st.write(rec.columns)
+        paper = paper.iloc[0]
 
-        # Authors
-        if rec.get('authors') is not None:
-            st.markdown(f"**Auteurs:** {rec['authors']}")
+        st.markdown(f"### {paper['title']}")
 
-        # Department
-        if rec.get('department') is not None:
-            st.markdown(f"**Afdeling:** {rec['department']}")
+        if pd.notna(paper["authors"]):
+            st.markdown(f"**Auteurs:** {paper['authors']}")
 
-        # Keywords
-        if rec.get("keywords") is not None:
-            st.markdown(f"**Trefwoorden:** {rec['keywords']}")
+        if pd.notna(paper["department"]):
+            st.markdown(f"**Afdeling:** {paper['department']}")
 
-        # Publication info
-        if rec.get("publishing_info") is not None:
-            st.markdown(f"**Publicatie:** {rec['publishing_info']}")
+        if pd.notna(paper["keywords"]):
+            st.markdown(f"**Keywords:** {paper['keywords']}")
 
-        # Link
-        if rec.get("title_url") is not None:
-            st.markdown(f"[Bekijk publicatie]({rec['title_url']})")
+        if pd.notna(paper["title_url"]):
+            st.markdown(f"[Publicatie bekijken]({paper['title_url']})")
 
-        # course = get_repo(name, O)
+
+    else:
+        st.warning(f"Onbekende bron: {source}")
 
 
 # ----------------------------
@@ -199,6 +205,7 @@ st.warning(
     "Probeer zinnen zoals 'ik ben op zoek naar ...' te vermijden.", icon="⚠️"
 )
 
+
 # st.warning(
 #         "NL: Deze tool is de eerste versie van een ontwikkeling gedaan voor Radboud Universiteit - Onderwijs voor Professionals (OvP).\n"
 #         "Het werkt het beste op simpele trefwoorden zoals 'ethiek' of 'artificial intelligence'.\n"
@@ -206,14 +213,21 @@ st.warning(
 
 
 query = st.text_input("Zoekterm(en)/Search term(s)")
-TOP_FINAL = st.number_input("Max resultaten/results", min_value=1, max_value=150, value=50)
+TOP_FINAL = st.number_input("Max resultaten/results", min_value=1, max_value=150, value=10)
 
 selected_terms = []
 
 if query:
     # expanded search
-    dfs = run_search(query, conn, embeddings, meta, model, TOP_FTS)
+    dfs = run_search(query, TOP_FTS)
 
+    results = run_search(query, TOP_FTS)
+
+    if results.empty:
+        st.warning(
+            "Geen resultaten gevonden"
+        )
+        st.stop()
 
     # if not dfs:
     if dfs is None:
@@ -244,22 +258,22 @@ if query:
 
         with tabs[0]:
             for _, row in results_all.iterrows():
-                render_single_result(row, E, O, R)
+                render_single_result(row)
                 st.markdown("---")
 
         with tabs[1]:
             for _, row in results_O.iterrows():
-                render_single_result(row, E, O, R)
+                render_single_result(row)
                 st.markdown("---")
 
         with tabs[2]:
             for _, row in results_E.iterrows():
-                render_single_result(row, E, O, R)
+                render_single_result(row)
                 st.markdown("---")
 
         with tabs[3]:
             for _, row in results_R.iterrows():
-                render_single_result(row, E, O, R)
+                render_single_result(row)
                 st.markdown("---")
     # except Exception as e:
     #     st.write("No matches found.")
@@ -267,3 +281,4 @@ if query:
     #     # st.write(e)
 
 # streamlit run app2.py --server.runOnSave true
+# uv run streamlit run app2.py --server.runOnSave true

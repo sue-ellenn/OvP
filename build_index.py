@@ -3,9 +3,14 @@ import pandas as pd
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-
 conn = sqlite3.connect("search.db")
 c = conn.cursor()
+
+c.execute(
+    """
+    DROP TABLE IF EXISTS search
+    """
+)
 
 c.execute("""
 CREATE VIRTUAL TABLE search
@@ -16,6 +21,7 @@ model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
 
 embeddings = []
 meta = []
+
 
 def build_search_text(row):
     parts = []
@@ -44,7 +50,12 @@ def process(df, name_col, source):
         )
         print("Processed", row[name_col])
         embeddings.append(model.encode(text))
-        meta.append((row[name_col], source))
+        meta.append({
+            "name": row[name_col],
+            "source": source,
+            "index": int(row.name)
+        })
+
 
 R = pd.read_csv("created_data/cleaned_data/repo.csv")
 E = pd.read_csv("created_data/cleaned_data/employee.csv")
@@ -60,5 +71,5 @@ print("repo done!")
 conn.commit()
 conn.close()
 
-np.save("created_data/DB_backups/embeddings.npy", np.array(embeddings))
+np.save("embeddings.npy", np.array(embeddings))
 np.save("meta.npy", np.array(meta, dtype=object))

@@ -8,6 +8,7 @@ from pathlib import Path
 from io import BytesIO
 import requests
 from collections import defaultdict
+import time
 
 # pd.read_csv("created_data/cleaned_data/repo.csv").to_parquet('created_data/cleaned_data/repo.parquet', compression="snappy")
 
@@ -18,24 +19,21 @@ FILES = {
 }
 # https://github.com/sue-ellenn/OvP/releases/download/data/embeddings.npy
 
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(exist_ok=True)
+BASE_DIR = Path(".")
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
-DB_PATH = "search.db"
-EMBEDDINGS_PATH = FILES["embeddings.npy"]
 
-response = requests.get(EMBEDDINGS_PATH)
-response.raise_for_status()
-
-embeddings = np.load(BytesIO(response.content))
-embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+PATHS = {
+    "search.db": BASE_DIR / "search.db",
+    "embeddings.npy": DATA_DIR / "embeddings.npy",
+    "meta.npy": DATA_DIR / "meta.npy"
+}
 
 
 def download_if_missing():
     for fname, url in FILES.items():
-        path = DATA_DIR / fname
+        path = PATHS[fname]
         if not path.exists():
             with st.spinner(f"Downloading {fname}..."):
                 r = requests.get(url, stream=True)
@@ -50,16 +48,50 @@ def download_if_missing():
 @st.cache_resource(show_spinner=False)
 def load_resources():
     download_if_missing()
-    conn = sqlite3.connect(DATA_DIR / "search.db", check_same_thread=False)
-    emb = np.load(DATA_DIR / "embeddings.npy", mmap_mode="r")
-    meta = np.load(DATA_DIR / "meta.npy", allow_pickle=True)
+
+    conn = sqlite3.connect("search.db", check_same_thread=False)
+
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA temp_store=MEMORY;")
+    conn.execute("PRAGMA cache_size=-64000;")
+
+    emb = np.load(PATHS["embeddings.npy"], mmap_mode="r")
+    meta = np.load(PATHS["meta.npy"], allow_pickle=True)
+
     model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
 
-    R = pd.read_parquet("created_data/cleaned_data/repo.parquet")
-    E = pd.read_csv("created_data/cleaned_data/employee.csv")
-    O = pd.read_csv("created_data/cleaned_data/osiris.csv")
+    conn = sqlite3.connect("search.db")
 
-    return conn, emb, meta, model, E, O, R
+    print(conn.execute(
+        "SELECT COUNT(*) FROM search"
+    ).fetchone())
+
+    print(conn.execute(
+        "SELECT COUNT(*) FROM employee"
+    ).fetchone())
+
+    print(conn.execute(
+        "SELECT COUNT(*) FROM osiris"
+    ).fetchone())
+
+    print(conn.execute(
+        "SELECT COUNT(*) FROM repo"
+    ).fetchone())
+
+    print(emb is not None)
+    print(meta is not None)
+
+    # R = pd.read_parquet("created_data/cleaned_data/repo.parquet")
+    # E = pd.read_csv("created_data/cleaned_data/employee.csv")
+    # O = pd.read_csv("created_data/cleaned_data/osiris.csv")
+
+    return conn, emb, meta, model  # , E, O, R
 
 
-conn, embeddings, meta, model, E, O, R = load_resources()
+def get_connection():
+    conn, embeddings, meta, model = load_resources()
+    return conn
+
+
+conn, embeddings, meta, model = load_resources()

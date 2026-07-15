@@ -10,6 +10,8 @@ from io import BytesIO
 import requests
 from collections import defaultdict
 from utils import *
+from database import get_connection, load_resources
+import time
 
 # pd.read_csv("created_data/cleaned_data/repo.csv").to_parquet('created_data/cleaned_data/repo.parquet', compression="snappy")
 
@@ -20,19 +22,19 @@ FILES = {
 }
 # https://github.com/sue-ellenn/OvP/releases/download/data/embeddings.npy
 
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(exist_ok=True)
-DB_PATH = "search.db"
-EMBEDDINGS_PATH = FILES["embeddings.npy"]
+# DATA_DIR = Path("data")
+# DATA_DIR.mkdir(exist_ok=True)
+# DB_PATH = "search.db"
+# EMBEDDINGS_PATH = "data/embeddings.npy"
+#
+# response = requests.get(EMBEDDINGS_PATH)
+# response.raise_for_status()
+#
+# embeddings = np.load(BytesIO(response.content))
+# embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+#
 
-response = requests.get(EMBEDDINGS_PATH)
-response.raise_for_status()
-
-embeddings = np.load(BytesIO(response.content))
-embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
-
-
-# conn, embeddings, meta, model, E, O, R = load_resources()
+conn, embeddings, meta, model = load_resources()
 
 
 def expand_query(query, model, embeddings, meta):
@@ -97,45 +99,42 @@ def get_similar_terms(query, model, embeddings, meta, top_k=5):
     return list(set(similar_terms))
 
 
-def run_search(query, conn, embeddings, meta, model, TOP_FTS):
+# @st.cache_data(max_entries=150)
+def run_search(query, TOP_FTS):
+    start = time.time()
+
     fts_query = build_fts_query(query)
+    conn, embeddings, meta, model = load_resources()
 
     sources = ["Employees", "Osiris", "Repo"]
     dfs = []
 
     expanded_queries = expand_query(query, model, embeddings, meta)
-    with st.expander("**Actual query:**"):
-        st.markdown(f"{expanded_queries}")
-    query_embeddings = [
-        model.encode(q) for q in expanded_queries
-    ]
+    # print("Download check1:", time.time() - start)
+    # start = time.time()
 
-    # normaliseren (belangrijk!)
-    query_embeddings = [
-        q / np.linalg.norm(q) for q in query_embeddings
-    ]
+    # with st.expander("**Actual query:**"):
+    #     st.markdown(f"{expanded_queries}")
 
-    # def max_sim(rowid):
-    #     doc_emb = embeddings[rowid - 1]
-    #     return max(
-    #         cosine_sim(q_emb, doc_emb)
-    #         for q_emb in query_embeddings
-    #     )
+    query_embeddings = model.encode(
+        fts_query,
+        normalize_embeddings=True
+    )
+    # print("Download check2:", time.time() - start)
+    # start = time.time()
 
-    def max_sim(rowid):
-        doc_emb = embeddings[rowid - 1]
+    def max_sim(rowids):
 
-        scores = []
-        for q, q_emb in zip(expanded_queries, query_embeddings):
-            score = cosine_sim(q_emb, doc_emb)
+        docs = embeddings[
+            np.array(rowids) - 1
+            ]
 
-            # boost originele query
-            if q == query:
-                score *= 1.2
+        scores = np.dot(
+            docs,
+            query_embeddings.T
+        )
 
-            scores.append(score)
-
-        return max(scores)
+        return scores.max(axis=1)
 
     for source in sources:
         df = pd.read_sql_query(
@@ -150,6 +149,9 @@ def run_search(query, conn, embeddings, meta, model, TOP_FTS):
             conn,
             params=(fts_query, source, TOP_FTS)
         )
+        print(source, len(df))
+        # print("Download check3:", time.time() - start)
+        # start = time.time()
 
         if df.empty:
             continue
@@ -161,10 +163,11 @@ def run_search(query, conn, embeddings, meta, model, TOP_FTS):
         #     for rowid in df["rowid"]
         # ]
 
-        df["semantic_score"] = [
-            max_sim(rowid)
-            for rowid in df["rowid"]
-        ]
+        df["semantic_score"] = max_sim(
+            df["rowid"].values
+        )
+        # print("Download check4:", time.time() - start)
+        # start = time.time()
 
         df["final_score"] = (
                 0.6 * df["semantic_score"] +
@@ -176,4 +179,8 @@ def run_search(query, conn, embeddings, meta, model, TOP_FTS):
 
         dfs.append(df)
 
-    return pd.concat(dfs)
+    print("Total time:", time.time() - start)
+    if not dfs:
+        return pd.DataFrame()
+
+    return pd.concat(dfs, ignore_index=True)

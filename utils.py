@@ -67,8 +67,70 @@ def normalize_name(name):
         "last": parts[-1] if parts else ""
     }
 
+
 def normalize(v):
     return v / np.linalg.norm(v)
+
+
+def get_employee(name, conn):
+    query = """
+    SELECT *
+    FROM employee
+    WHERE name = ?
+    """
+
+    return pd.read_sql_query(query, conn, params=(name,))
+
+
+def get_osiris_course(course, conn):
+    query = """
+    SELECT *
+    FROM osiris
+    WHERE cursus = ?
+    """
+
+    pd.read_sql_query(query, conn, params=(course,))
+
+
+def get_repo_paper(title, conn):
+    query = """
+    SELECT *
+    FROM repo
+    WHERE title = ?
+    """
+
+    pd.read_sql_query(query, conn, params=(title,))
+
+
+def get_employees_for_course(course, conn):
+    query = """
+    SELECT
+        employee,
+        employee_url,
+        match_score
+
+    FROM course_employee
+
+    WHERE course = ?
+
+    ORDER BY match_score DESC
+
+    """
+
+    pd.read_sql_query(query, conn, params=(course,))
+
+
+def get_courses_for_employee(employee, conn):
+    query = """
+    SELECT
+        course
+
+    FROM course_employee
+
+    WHERE employee = ?
+    """
+
+    return pd.read_sql_query(query, conn, params=(employee,))
 
 
 def docent_match(employee_name, docent_rol):
@@ -100,19 +162,27 @@ def get_docent_cursussen(name, O, max_items=3):
     )
     return O[mask][["CURSUS", "LANGE_NAAM_NL", "DOEL"]].head(max_items)
 
-def get_employees_for_course(course_code, conn):
 
-    df = pd.read_sql_query(
-        """
-        SELECT employee
-        FROM course_employee
-        WHERE course = ?
-        """,
+def get_employees_for_course(course, conn):
+    query = """
+    SELECT 
+        employee,
+        employee_url,
+        match_score
+
+    FROM course_employee
+
+    WHERE course = ?
+    """
+
+    df = pd.read_sql(
+        query,
         conn,
-        params=(course_code,)
+        params=(course,)
     )
 
-    return df["employee"].tolist()
+    return df
+
 
 def get_osiris_course(course_code, O):
     row = O[O["CURSUS"] == course_code]
