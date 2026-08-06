@@ -1,4 +1,6 @@
 import base64
+
+import pandas as pd
 import streamlit as st
 import numpy as np
 from pathlib import Path
@@ -37,7 +39,15 @@ FILES = {
 TOP_FTS = 30
 TOP_FINAL = 0
 
-conn, embeddings, meta, model = load_resources()
+embeddings, meta, model = load_resources()
+conn = get_connection()
+
+print("all columns: ")
+
+# print(pd.read_sql("PRAGMA table_info(employee)", conn))
+# print(pd.read_sql("PRAGMA table_info(osiris)", conn))
+# print(pd.read_sql("PRAGMA table_info(repo)", conn))
+# print(pd.read_sql("PRAGMA table_info(course_employee)", conn))
 
 
 def render_single_result(result, conn):
@@ -75,6 +85,7 @@ def render_single_result(result, conn):
             st.markdown(f"**Onderzoeksgroep:** {employee['onderzoeksgroep']}")
 
         courses = get_courses_for_employee(employee["name"], conn)
+
         if not courses.empty:
             st.markdown("### Geeft onderwijs in:")
 
@@ -85,20 +96,57 @@ def render_single_result(result, conn):
     elif source == "Osiris":
         course = get_osiris_course(name, conn)
 
-        if course.empty:
+        if course is None:
             st.markdown("_Geen cursusdetails gevonden._")
             return
 
-        course = course.iloc[0]
+        # course = course.iloc[0]
+        try:
+            st.caption(f"## Vak: {course['lange_naam']} ({course['cursus']})")
+        except Exception as e:
+            print("NOOOO")
+            pass
+        # capt = f"## Vak: lnaam ({course['cursus']})"
+        # st.caption(f"## Vakcode: {course['cursus']}")
+        #
+        # if pd.notna(course["lange_naam"]):
+        #     # st.markdown(f"**Vaknaam:** {course['lange_naam']}")
+        #     capt.replace("lnaam", str(course['lange_naam']))
+        #     st.caption(capt)
+        # else:
+        #     st.caption(f"## Vakcode: {course['cursus']}")
 
-        st.caption(f"Vakcode: {course['cursus']}")
-
-        if pd.notna(course["lange_naam"]):
-            st.markdown(f"**Vaknaam:** {course['lange_naam']}")
+        # st.caption(capt)
+        # if pd.notna(course['docent_rol']):
+        #     st.markdown(f"**DOCENTEN:** {course['docent_rol']}")
 
         # gekoppelde docenten
 
+        # print("counts")
+        # print(pd.read_sql("""
+        #     SELECT COUNT(*)
+        #     FROM course_employee
+        #     """, conn))
+        print("-------------------------")
+        # print("course:", course)
         employees = get_employees_for_course(course["cursus"], conn)
+        #
+        # print(pd.read_sql("""
+        # SELECT *
+        # FROM course_employee
+        # WHERE course = ?
+        # LIMIT 5
+        # """, conn, params=(course["cursus"],)))
+        #
+        # print("---")
+        #
+        # print("check")
+        # print(pd.read_sql("""
+        # SELECT *
+        # FROM course_employee
+        # LIMIT 10
+        # """, conn))
+        # print(employees)
 
         if not employees.empty:
 
@@ -119,8 +167,9 @@ def render_single_result(result, conn):
                         conn)
 
         # overige cursusinformatie
+        st.markdown("### Vak informatie")
 
-        with st.expander("Meer informatie over vak"):
+        with st.expander("Meer info..."):
 
             if pd.notna(course["inhoud"]):
                 st.markdown(f"**Inhoud:** {course['inhoud']}")
@@ -131,13 +180,13 @@ def render_single_result(result, conn):
 
     elif source == "Repo":
 
-        paper = get_repo_paper(name, conn)
+        paper = get_repository_record(name, conn)
 
-        if paper.empty:
+        if paper is None:
             st.markdown("_Geen publicatiegegevens gevonden._")
             return
 
-        paper = paper.iloc[0]
+        # paper = paper.iloc[0]
 
         st.markdown(f"### {paper['title']}")
 
@@ -196,7 +245,7 @@ st.markdown(
 )
 
 st.title("Onderwijs voor Professionals: Expert finder")
-st.warning(
+st.info(
     "EN: This tool is the first version of a tool created for Radboud Universiteit - Onderwijs voor Professionals (OvP).\n"
     "It works best when using singular keywords such as 'ethics' or 'artificial intelligence'.\n"
     "Try to avoid full phrases like 'I\'m looking for ...'\n\n"
@@ -204,7 +253,6 @@ st.warning(
     "Het werkt het beste op simpele trefwoorden zoals 'ethiek' of 'artificial intelligence'.\n"
     "Probeer zinnen zoals 'ik ben op zoek naar ...' te vermijden.", icon="⚠️"
 )
-
 
 # st.warning(
 #         "NL: Deze tool is de eerste versie van een ontwikkeling gedaan voor Radboud Universiteit - Onderwijs voor Professionals (OvP).\n"
@@ -219,9 +267,9 @@ selected_terms = []
 
 if query:
     # expanded search
-    dfs = run_search(query, TOP_FTS)
+    # dfs = run_search(query, TOP_FTS)
 
-    results = run_search(query, TOP_FTS)
+    results = run_search(query, TOP_FTS, conn)
 
     if results.empty:
         st.warning(
@@ -230,7 +278,7 @@ if query:
         st.stop()
 
     # if not dfs:
-    if dfs is None:
+    if results is None:
         st.markdown("_Geen publicatiedetails gevonden._")
         st.warning("Keyword not found. Try a different one.", icon="❗❗❗")
     else:
@@ -241,7 +289,7 @@ if query:
             "Repo": max(5, TOP_FINAL),
         }
 
-        results = dfs.sort_values("final_score", ascending=False)
+        results = results.sort_values("final_score", ascending=False)
 
         # per bron
         results_O = results[results["source"] == "Osiris"].head(TAB_LIMITS["Osiris"])
@@ -258,27 +306,31 @@ if query:
 
         with tabs[0]:
             for _, row in results_all.iterrows():
-                render_single_result(row)
+                render_single_result(row, conn)
                 st.markdown("---")
 
         with tabs[1]:
             for _, row in results_O.iterrows():
-                render_single_result(row)
+                render_single_result(row, conn)
                 st.markdown("---")
 
         with tabs[2]:
             for _, row in results_E.iterrows():
-                render_single_result(row)
+                render_single_result(row, conn)
                 st.markdown("---")
 
         with tabs[3]:
             for _, row in results_R.iterrows():
-                render_single_result(row)
+                render_single_result(row, conn)
                 st.markdown("---")
+
     # except Exception as e:
     #     st.write("No matches found.")
     #     st.warning("Invalid input", icon="❗")
     #     # st.write(e)
+print("-------------------------")
+print("-------------------------")
+print("-------------------------")
 
 # streamlit run app2.py --server.runOnSave true
 # uv run streamlit run app2.py --server.runOnSave true

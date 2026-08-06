@@ -49,12 +49,12 @@ def download_if_missing():
 def load_resources():
     download_if_missing()
 
-    conn = sqlite3.connect("search.db", check_same_thread=False)
+    # conn = sqlite3.connect("search.db", check_same_thread=False)
 
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    conn.execute("PRAGMA temp_store=MEMORY;")
-    conn.execute("PRAGMA cache_size=-64000;")
+    # conn.execute("PRAGMA journal_mode=WAL;")
+    # conn.execute("PRAGMA synchronous=NORMAL;")
+    # conn.execute("PRAGMA temp_store=MEMORY;")
+    # conn.execute("PRAGMA cache_size=-64000;")
 
     emb = np.load(PATHS["embeddings.npy"], mmap_mode="r")
     meta = np.load(PATHS["meta.npy"], allow_pickle=True)
@@ -82,16 +82,28 @@ def load_resources():
     print(emb is not None)
     print(meta is not None)
 
+    print(conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall())
+
     # R = pd.read_parquet("created_data/cleaned_data/repo.parquet")
     # E = pd.read_csv("created_data/cleaned_data/employee.csv")
     # O = pd.read_csv("created_data/cleaned_data/osiris.csv")
 
-    return conn, emb, meta, model  # , E, O, R
+    return emb, meta, model  # , E, O, R
 
 
 def get_connection():
-    conn, embeddings, meta, model = load_resources()
-    return conn
 
+   conn = sqlite3.connect(
+        "search.db",
+        check_same_thread=False
+    )
+   conn.execute("PRAGMA journal_mode=WAL;")
+   conn.execute("PRAGMA synchronous=NORMAL;")
+   conn.execute("PRAGMA temp_store=MEMORY;")
+   conn.execute("PRAGMA cache_size=-64000;")
+   return conn
 
-conn, embeddings, meta, model = load_resources()
+# embeddings, meta, model = load_resources()
+# conn = get_connection()

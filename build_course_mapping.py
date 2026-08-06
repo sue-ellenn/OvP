@@ -4,11 +4,7 @@ import re
 
 from rapidfuzz import fuzz
 
-EMPLOYEE_PATH = "created_data/cleaned_data/employee.csv"
-OSIRIS_PATH = "created_data/cleaned_data/osiris.csv"
-
 DATABASE = "search.db"
-
 
 def clean_text(text):
     if pd.isna(text):
@@ -16,31 +12,33 @@ def clean_text(text):
 
     text = str(text).lower()
 
+    # urls verwijderen
     text = re.sub(
-        r"http\S+",
+        r"https?://\S+",
         " ",
-        text)
+        text
+    )
 
+    # link, link1, link2 verwijderen
     text = re.sub(
-        r"\blink\d+\b",
+        r"\blink\d*\b",
         " ",
-        text)
+        text
+    )
 
-    text = re.sub(
-        r"\blink\b",
-        " ",
-        text)
-
+    # extern verwijderen
     text = re.sub(
         r"\bextern\b",
         " ",
-        text)
+        text
+    )
 
-    # speciale tekens
+    # speciale tekens verwijderen
     text = re.sub(
         r"[^a-z0-9\s]",
         " ",
-        text)
+        text
+    )
 
     # dubbele spaties
     text = " ".join(text.split())
@@ -48,84 +46,104 @@ def clean_text(text):
     return text
 
 
-def clean_course_name(course):
-    return clean_text(course)
+def match_course(course_name, education_text):
+    course_name = clean_text(course_name)
+
+    education_text = clean_text(education_text)
+
+    if not course_name:
+        return 0, "none"
+
+    if course_name in education_text:
+        return 100, "exact"
+
+    token_score = fuzz.token_set_ratio(course_name, education_text)
+
+    partial_score = fuzz.partial_ratio(course_name, education_text)
+
+    score = max(token_score, partial_score)
+
+    if score >= 85:
+        return score, "fuzzy"
+
+    return score, "none"
 
 
-def course_in_employee_text(course, employee_text):
-    course = clean_course_name(course)
+conn = sqlite3.connect(DATABASE)
 
-    employee_text = clean_text(employee_text)
+employees = pd.read_sql(
+    """
+    SELECT
+        name,
+        url,
+        onderwijs
+    FROM employee
+    """,
+    conn
+)
 
-    if not course:
-        return 0
+courses = pd.read_sql(
+    """
+    SELECT
+        cursus,
+        lange_naam
+    FROM osiris
+    """,
+    conn
+)
 
-    # exacte match
+print("Employees:", len(employees))
 
-    if course in employee_text:
-        return 100
+print("Courses:", len(courses))
 
-    # fuzzy fallback
-    score = fuzz.partial_ratio(course, employee_text)
+# dubbele vaknamen verwijderen
 
-    return score
+courses = courses.drop_duplicates(subset=["cursus"])
 
-
-E = pd.read_csv(EMPLOYEE_PATH)
-O = pd.read_csv(OSIRIS_PATH)
-
-print("Employees:", len(E))
-print("Courses:", len(O))
-
-osiris_courses = []
-
-for _, row in O.iterrows():
-
-    course = row["CURSUS"]
-
-    if pd.notna(course):
-        osiris_courses.append(course)
-
-# dubbele vakken verwijderen
-
-osiris_courses = list(set(osiris_courses))
-
-print("Unique Osiris courses:", len(osiris_courses))
-
-
-
+print("Unique courses:", len(courses))
 
 matches = []
 
-print("start matching: ")
+exact_matches = 0
+fuzzy_matches = 0
 
-for _, employee in E.iterrows():
+print("matching: ")
 
-    # medewerkers zonder onderwijs overslaan
+for _, employee in employees.iterrows():
 
-    if pd.isna(employee["Onderwijs"]):
+    education = employee["onderwijs"]
+
+    if pd.isna(education):
         continue
 
-    education = employee["Onderwijs"]
+    for _, course in courses.iterrows():
 
-    for course in osiris_courses:
+        score, match_type = match_course(course["lange_naam"], education)
 
-        score = course_in_employee_text(course, education)
+        if match_type != "none":
 
-        if score >= 90:
             matches.append(
                 (
-                    course,
-                    employee["Name"],
-                    employee["Url"],
-                    score
+                    course["cursus"],
+                    employee["name"],
+                    employee["url"],
+                    int(score)
                 )
             )
 
-print("Matches gevonden:",  len(matches))
-print("DB: ")
+            if match_type == "exact":
+                exact_matches += 1
 
-conn = sqlite3.connect(DATABASE)
+            elif match_type == "fuzzy":
+                fuzzy_matches += 1
+
+print()
+print("Matches gevonden:", len(matches))
+
+print("Exact:", exact_matches)
+
+print("Fuzzy:", fuzzy_matches)
+
 cur = conn.cursor()
 
 cur.execute(
@@ -137,21 +155,50 @@ cur.execute(
 cur.execute(
     """
     CREATE TABLE course_employee(
+
         course TEXT,
         employee TEXT,
         employee_url TEXT,
         match_score INTEGER
+
     )
-    """)
+    """
+)
 
 cur.executemany(
     """
     INSERT INTO course_employee
     VALUES (?,?,?,?)
     """,
-     matches)
+    matches
+)
 
 conn.commit()
+
+# checkas
+
+count = pd.read_sql(
+    """
+    SELECT COUNT(*)
+    FROM course_employee
+    """,
+    conn
+)
+
+print()
+print(count)
+
+examples = pd.read_sql(
+    """
+    SELECT *
+    FROM course_employee
+    LIMIT 10
+    """,
+    conn
+)
+
+print(examples)
 conn.close()
 
+print()
 print("Done!")

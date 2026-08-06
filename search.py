@@ -34,7 +34,8 @@ FILES = {
 # embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
 #
 
-conn, embeddings, meta, model = load_resources()
+# embeddings, meta, model = load_resources()
+# conn = get_connection()
 
 
 def expand_query(query, model, embeddings, meta):
@@ -100,16 +101,19 @@ def get_similar_terms(query, model, embeddings, meta, top_k=5):
 
 
 # @st.cache_data(max_entries=150)
-def run_search(query, TOP_FTS):
+def run_search(query, TOP_FTS, conn):
     start = time.time()
 
     fts_query = build_fts_query(query)
-    conn, embeddings, meta, model = load_resources()
+    print("FTS query:", fts_query)
+
+    embeddings, meta, model = load_resources()
+    # conn = get_connection()
 
     sources = ["Employees", "Osiris", "Repo"]
     dfs = []
 
-    expanded_queries = expand_query(query, model, embeddings, meta)
+    # expanded_queries = expand_query(query, model, embeddings, meta)
     # print("Download check1:", time.time() - start)
     # start = time.time()
 
@@ -117,9 +121,10 @@ def run_search(query, TOP_FTS):
     #     st.markdown(f"{expanded_queries}")
 
     query_embeddings = model.encode(
-        fts_query,
+        [fts_query],
         normalize_embeddings=True
     )
+
     # print("Download check2:", time.time() - start)
     # start = time.time()
 
@@ -181,6 +186,14 @@ def run_search(query, TOP_FTS):
 
     print("Total time:", time.time() - start)
     if not dfs:
+        # conn.close()
         return pd.DataFrame()
 
-    return pd.concat(dfs, ignore_index=True)
+    result = pd.concat(
+        dfs,
+        ignore_index=True
+    )
+
+    # conn.close()
+
+    return result

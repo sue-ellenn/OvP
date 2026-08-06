@@ -99,7 +99,7 @@ def get_repo_paper(title, conn):
     WHERE title = ?
     """
 
-    pd.read_sql_query(query, conn, params=(title,))
+    return pd.read_sql_query(query, conn, params=(title,))
 
 
 def get_employees_for_course(course, conn):
@@ -117,7 +117,7 @@ def get_employees_for_course(course, conn):
 
     """
 
-    pd.read_sql_query(query, conn, params=(course,))
+    return pd.read_sql_query(query, conn, params=(course,))
 
 
 def get_courses_for_employee(employee, conn):
@@ -184,14 +184,46 @@ def get_employees_for_course(course, conn):
     return df
 
 
-def get_osiris_course(course_code, O):
-    row = O[O["CURSUS"] == course_code]
-    return None if row.empty else row.iloc[0]
+def get_osiris_course(name, conn):
+
+    query = """
+    SELECT *
+    FROM osiris
+    WHERE CURSUS = ?
+    LIMIT 1
+    """
+
+    result = pd.read_sql_query(
+        query,
+        conn,
+        params=(name,)
+    )
+
+    if result.empty:
+        return None
+
+    return result.iloc[0]
 
 
-def get_repository_record(title, R):
-    row = R[R["title"] == title]
-    return None if row.empty else row.iloc[0]
+def get_repository_record(title, conn):
+
+    query = """
+    SELECT *
+    FROM repo
+    WHERE title = ?
+    LIMIT 1
+    """
+
+    row = pd.read_sql_query(
+        query,
+        conn,
+        params=(title,)
+    )
+
+    if row.empty:
+        return None
+
+    return row.iloc[0]
 
 
 def interleave(dfs, max_total):
