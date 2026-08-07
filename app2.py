@@ -188,7 +188,7 @@ def render_single_result(result, conn):
 
         # paper = paper.iloc[0]
 
-        st.markdown(f"### {paper['title']}")
+        st.caption(f"## {paper['title']}")
 
         if pd.notna(paper["authors"]):
             st.markdown(f"**Auteurs:** {paper['authors']}")
@@ -279,7 +279,7 @@ if query:
 
     # if not dfs:
     if results is None:
-        st.markdown("_Geen publicatiedetails gevonden._")
+        st.markdown("_Geen resultaten gevonden._")
         st.warning("Keyword not found. Try a different one.", icon="❗❗❗")
     else:
         TAB_LIMITS = {
