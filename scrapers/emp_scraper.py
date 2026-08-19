@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 import os
 import glob
 
-from scraper.sc_utils import content_hash
+from scrapers.sc_utils import content_hash
 from db.employee_index import create_employee_index, get_employee_index, update_employee_index
 
 create_employee_index()
@@ -22,168 +22,8 @@ file_headers = ["Name", "Url", "Faculties", "Keywords", "Onderzoeksthema", "Onde
                 "Onderzoeksbeurzen en -prijzen", "Projecten", "Onderwijs", "In de media", "Curriculum Vitae",
                 "Nevenwerkzaamheden"]
 
-# from requests_html import HTMLSession
-
-# base_url = "https://www.ru.nl"
-# target = "https://www.ru.nl/zoeken/scope/medewerkers?w="
-
-# target = f"https://www.ru.nl/zoeken/scope/medewerkers?w=&page={page_count}"
-
-# def scrape_all_employees():
-#     base_url = "https://www.ru.nl"
-#     target = "https://www.ru.nl/zoeken/scope/medewerkers?w="
-#
-#     all_employees = []
-#     headers = {
-#         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-#                       "AppleWebKit/537.36 (KHTML, like Gecko) "
-#                       "Chrome/128.0.0.0 Safari/537.36",
-#         "Referer": target,
-#     }
-#
-#     # PARAMS = {
-#     #     "rpp": 50,
-#     #     "sort_by": -1,
-#     #     "type": "authorganizationcode",
-#     #     "etal": -1,
-#     #     "order": "ASC"
-#     # }
-#
-#     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-#
-#     # create session from OG webpage
-#     html = get_html(target)
-#     soup = BeautifulSoup(html, "html.parser")
-#
-#     # print(soup.prettify())
-#     # quit()
-#     TOTAL_RESULTS = 0
-#
-#     TOTAL_RESULTS = soup.find(string=re.compile(r"\bResultaat\b", re.I))
-#     print("TOTAL_RESULTS", TOTAL_RESULTS)
-#     match_ = re.findall(r"(\d+)", TOTAL_RESULTS.string)
-#     TOTAL_RESULTS = int(match_[-1])
-#     RPP = int(match_[-2])
-#     print("RPP:", RPP)
-#
-#     # quit()
-#     file_name = "created_data/employees/employees" + str(current_time) + ".csv"
-#
-#     file_headers = ["Name", "Url", "Faculties", "Keywords", "Onderzoeksthema", "Onderzoeksgroep", "Publicaties",
-#                     "Onderzoeksbeurzen en -prijzen", "Projecten", "Onderwijs", "In de media", "Curriculum Vitae",
-#                     "Nevenwerkzaamheden"]
-#
-#     page_count = 0
-#
-#     with open(file_name, "w", newline="", encoding="utf-8-sig") as f:
-#         # writer = csv.DictWriter(f, file_headers )
-#         # writer.writeheader()
-#
-#         for offset in range(0, TOTAL_RESULTS, RPP):
-#             print("Offset", offset)
-#
-#             employee_list = soup.find_all("h2", class_="card__title")
-#             # print("Employees:", employee_list)
-#
-#             for emp in employee_list:
-#                 print("------------------------------------------------")
-#
-#                 # get name
-#                 name = emp.find("a")
-#                 try:
-#                     emp_url = urljoin(base_url, name["href"])
-#                 except:
-#                     continue
-#
-#                 print("URL: ", emp_url)
-#
-#                 name = emp.find("span", class_="link__text").string
-#                 print("Name", name)
-#
-#                 data_dict = exctract_employee_page(emp_url, file_headers)
-#                 data_dict["Name"] = name
-#                 data_dict["Url"] = emp_url
-#
-#                 print("Dictionary keys:", data_dict.keys())
-#
-#                 for k in data_dict.keys():
-#                     if k not in file_headers:
-#                         print(k)
-#                         break
-#                 all_employees.append(data_dict)
-#
-#             print("------------------------------------------------")
-#
-#             # next page
-#             page_count += 1
-#
-#             target = f"https://www.ru.nl/zoeken/scope/medewerkers?w=&page={page_count}"
-#
-#             html = get_html(target)
-#             soup = BeautifulSoup(html, "html.parser")
-#             print("Next page: succes!")
-#
-#             #     break
-#             # break
-#
-#             # faculty = emp.find_all("div", class_="meta-data")
-#             # print("Faculty", faculty)
-#             #
-#             #
-#             # faculty_names = faculty.find_all("a")
-#             # print("faculty names", faculty_names)
-#
-#     print("Finished")
-#     return pd.DataFrame(all_employees)
-
-
-# def scrape_all_employees():
-#     employees = []
-#     c = 0
-#     for name, url in get_employee_urls():
-#         employees.append(parse_employee(name, url, file_headers))
-#         c+=1
-#         if c > 5:
-#             break
-#
-#     return pd.DataFrame(employees)
-
 print()
 
-
-# def scrape_all_employees():
-#     playwright, browser, page = get_browser()
-#     create_employee_index()
-#     existing = get_employee_index()
-#     employees = []
-#     try:
-#         print("Scraping all employees")
-#         employee_urls = get_employee_urls(page)
-#
-#         c = 0
-#         print("Entering for loop")
-#         for name, url in employee_urls:
-#             html, soup = get_page(page, url)
-#             new_hash = content_hash(html)
-#
-#             if url in existing and existing[url]["content_hash"] == new_hash:
-#                 print(f"Scraping already scraped {name}")
-#                 update_employee_index(url, name, new_hash)
-#                 continue
-#             print(f"Scraping {name}")
-#             data = extract_employee_page(soup, file_headers)
-#             data["Name"] = name
-#             data["Url"] = url
-#             employees.append(data)
-#             update_employee_index(url, name, new_hash)
-#             c+=1
-#             if c > 5:
-#                 break
-#         # employees = [parse_employee(page, name, url, file_headers) for name, url in employee_urls]
-#         return pd.DataFrame(employees)  #, columns=file_headers
-#     finally:
-#         browser.close()
-#         playwright.stop()
 
 def scrape_all_employees():
     playwright, browser, page = get_browser()
@@ -191,7 +31,11 @@ def scrape_all_employees():
     try:
         employee_urls = get_employee_urls(page)
         employees = [parse_employee(page, name, url, file_headers) for name, url in employee_urls]
-        return pd.DataFrame(employees)
+        df = pd.DataFrame(employees)
+        print("Scraped columns:", list(df.columns))
+        print("Employees scraped:", len(df))
+        return df
+
 
     finally:
         browser.close()
@@ -436,7 +280,7 @@ def parse_employee(page, name, url, file_headers):
     data["Name"] = name
     data["Url"] = url
     data["_hash"] = content_hash(html)
-    return data, html
+    return data
 
 
 def get_html(url):

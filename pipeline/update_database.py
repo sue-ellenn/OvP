@@ -1,4 +1,4 @@
-from scraper.emp_scraper import scrape_employee, scrape_all_employees
+from scrapers.emp_scraper import scrape_employee, scrape_all_employees
 from db.db import get_connection
 
 
