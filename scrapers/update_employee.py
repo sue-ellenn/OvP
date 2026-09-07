@@ -1,5 +1,5 @@
 import sqlite3
-from scrapers.emp_scraper import scrape_all_employees
+from OvP.scrapers.emp_scraper import scrape_all_employees
 
 DB_PATH = "search.db"
 
