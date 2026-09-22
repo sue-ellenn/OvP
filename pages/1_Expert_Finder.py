@@ -6,11 +6,18 @@ import numpy as np
 from pathlib import Path
 from io import BytesIO
 import requests
-from OvP.database import *
-from OvP.utils import *
-from OvP.search import *
-
+import sys
+import os
+# os.chdir('..')
+# sys.path.insert(1, os.getcwd())
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+# print(sys.path)
+from database import *
+from utils import *
+from search import *
+# os.chdir('pages')
 # from build_course_mapping import *
+from urllib.parse import quote
 
 # pd.read_csv("created_data/cleaned_data/repo.csv").to_parquet('created_data/cleaned_data/repo.parquet', compression="snappy")
 
@@ -42,15 +49,36 @@ TOP_FINAL = 0
 embeddings, meta, model = load_resources()
 conn = get_connection()
 
-print("all columns: ")
-
+# print("all columns: ", )
+#
 # print(pd.read_sql("PRAGMA table_info(employee)", conn))
 # print(pd.read_sql("PRAGMA table_info(osiris)", conn))
 # print(pd.read_sql("PRAGMA table_info(repo)", conn))
 # print(pd.read_sql("PRAGMA table_info(course_employee)", conn))
 
+# def create_linkedin_url(query, location=None, company=None, title=None):
+#     params = []
+#
+#     if query:
+#         params.append(f"keywords={quote(query)}")
+#     if location:
+#         params.append(f"geoUrn={quote(location)}")
+#     if company:
+#         params.append(f"currentCompany={quote(company)}")
+#     if title:
+#         params.append(f"title={quote(title)}")
+#
+#     return "https://www.linkedin.com/search/results/people/?" + "&".join(params)
 
+def create_linkedin_url(query):
+    return f"https://www.linkedin.com/search/results/people/?keywords={quote(query)}"
 def render_single_result(result, conn):
+    """
+    generates a single result in the required format
+    @param result: search result
+    @param conn: sqlit3 connection
+    @return:
+    """
     name = result["name"]
     source = result["source"]
 
@@ -206,6 +234,8 @@ def render_single_result(result, conn):
     else:
         st.warning(f"Onbekende bron: {source}")
 
+    return
+
 
 # ----------------------------
 # UI building
@@ -214,14 +244,14 @@ st.set_page_config(page_title="Expert Finder", page_icon="📈")
 # if "selected_terms" not in st.session_state:
 #     st.session_state.selected_terms = []
 
-st.sidebar.header("Plotting Demo")
+# st.sidebar.header("Plotting Demo")
 
 def get_base64_image(image_path):
     with open(image_path, "rb") as img_file:
         return base64.b64encode(img_file.read()).decode()
 
 
-logo_base64 = get_base64_image("../../app_layouts/RU_LOGO_COMPLEET.png")
+logo_base64 = get_base64_image("../app_layouts/RU_LOGO_COMPLEET.png")
 
 st.markdown(
     f"""
@@ -263,7 +293,7 @@ st.info(
 #         "Het werkt het beste op simpele trefwoorden zoals 'ethiek' of 'artificial intelligence'.\n"
 #         "Probeer zinnen zoals 'ik ben op zoek naar ...' te vermijden.")
 
-pass
+# pass
 
 query = st.text_input("Zoekterm(en)/Search term(s)")
 TOP_FINAL = st.number_input("Max resultaten/results", min_value=1, max_value=150, value=10)
@@ -275,6 +305,9 @@ if query:
     # dfs = run_search(query, TOP_FTS)
 
     results = run_search(query, TOP_FTS, conn)
+
+    linkedin_url = create_linkedin_url(query)
+    st.link_button("Zoek professionals op LinkedIn →", linkedin_url)
 
     if results.empty:
         st.warning(
@@ -338,4 +371,10 @@ print("-------------------------")
 print("-------------------------")
 
 # streamlit run Hello.py --server.runOnSave true
-# uv run streamlit run Hello.py --server.runOnSave true
+"""
+
+.venv\Scripts\activate
+cd OvP/pages
+uv run streamlit run 1_Expert_Finder.py --server.runOnSave true
+
+"""

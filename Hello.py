@@ -1,22 +1,43 @@
 import base64
 import sys
 
-
 # import pandas as pd
 import streamlit as st
 # import numpy as np
 from pathlib import Path
 import streamlit.components.v1 as components
+import os
 
-cwd = Path.cwd()
-
-print("cwd:", cwd)
+# sys.path.insert(1, os.getcwd())
+import sqlite3
+import numpy as np
+from sentence_transformers import SentenceTransformer
+import pandas as pd
+import requests
+from pathlib import Path
+from io import BytesIO
+import requests
+from collections import defaultdict
+import time
 
 # from io import BytesIO
-# import requests
-from .OvP.database import *
+# import request
+
+# from AppUtils import *
+from database import *
 # from OvP.utils import *
 # from OvP.search import *
+
+
+st.markdown(
+    """
+    <style>
+        [data-testid="stSidebar"] {display: none;}
+        [data-testid="collapsedControl"] {display: none;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 def get_base64_image(image_path):
@@ -35,29 +56,10 @@ if "global_data" not in st.session_state:
     # st.session_state.global_data = pd.read_csv("large_dataset.csv")
     embeddings, meta, model = load_resources()
     conn = get_connection()
-    pass
-# st.sidebar.success("Select a demo above.")
+    st.session_state.global_data = [embeddings, meta, model, conn]
 
-# pages_folder = Path("app")
-#
-# app = []
-#
-# for file in sorted(pages_folder.glob("*.py")):
-#     # print(file.stem)
-#     st.write(file.stem)
-#     app.append(
-#         st.Page(
-#             str(file),
-#             title=file.stem.replace("_", " ").title(),
-#         )
-#     )
-#
-# pg = st.navigation(app, position="sidebar")
-#
-# pg.run()
-
-
-logo_base64 = get_base64_image("../app_layouts/RU_LOGO_COMPLEET.png")
+# logo_base64 = get_base64_image("../app_layouts/RU_LOGO_COMPLEET.png")
+logo_base64 = get_base64_image("app_layouts/RU_LOGO_COMPLEET.png")
 
 st.markdown(
     f"""
@@ -92,16 +94,6 @@ st.info(
     "Probeer zinnen zoals 'ik ben op zoek naar ...' te vermijden.", icon="⚠️"
 )
 
-st.markdown(
-    """
-    <style>
-        [data-testid="stSidebar"] {display: none;}
-        [data-testid="collapsedControl"] {display: none;}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
 # st.page_link("pages/1_Expert_Finder.py", label="Get Started!", width="stretch")
 # if st.button("Get started!", width=300):
 #
@@ -126,7 +118,6 @@ _, col2, _ = st.columns([1, 2, 1])
 with col2:
     st.link_button("Get started!", "pages/1_Expert_Finder", type="primary")
 
-
 with st.expander("AI modus"):
     st.markdown(
         f""" 
@@ -139,27 +130,35 @@ with st.expander("AI modus"):
     #
     # if AI_mode:
     #     st.write("AI mode activated!")
-        # st.markdown(
-        #     """
-        #     <style>
-        #     .reportview-container {
-        #         background: url("url_goes_here")
-        #     }
-        #    .sidebar .sidebar-content {
-        #         background: url("url_goes_here")
-        #     }
-        #     </style>
-        #     """,
-        #     unsafe_allow_html=True
-        # )
+    # st.markdown(
+    #     """
+    #     <style>
+    #     .reportview-container {
+    #         background: url("url_goes_here")
+    #     }
+    #    .sidebar .sidebar-content {
+    #         background: url("url_goes_here")
+    #     }
+    #     </style>
+    #     """,
+    #     unsafe_allow_html=True
+    # )
 
-        # js_code = """
-        #         <script>
-        #             window.open('pages/2_AI_Mode', '_blank').focus();
-        #         </script>
-        #     """
-        # components.html(js_code, height=0)
-        # st.write("Redirecting to link...")
+    # js_code = """
+    #         <script>
+    #             window.open('pages/2_AI_Mode', '_blank').focus();
+    #         </script>
+    #     """
+    # components.html(js_code, height=0)
+    # st.write("Redirecting to link...")
     _, col2, _ = st.columns([1, 2, 1])
     with col2:
         st.link_button("Enter AI mode", "pages/2_AI_Mode", type="primary")
+
+
+"""
+
+.venv\Scripts\activate
+uv run streamlit run Hello.py --server.runOnSave true
+
+"""

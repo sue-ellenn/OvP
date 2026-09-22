@@ -19,13 +19,15 @@ FILES = {
 }
 # https://github.com/sue-ellenn/OvP/releases/download/data/embeddings.npy
 
-BASE_DIR = Path(".")
+# BASE_DIR = Path(".")
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "data" / "search.db"
 
 PATHS = {
-    "search.db": BASE_DIR / "search.db",
+    "search.db": DB_PATH,
     "embeddings.npy": DATA_DIR / "embeddings.npy",
     "meta.npy": DATA_DIR / "meta.npy"
 }
@@ -61,30 +63,30 @@ def load_resources():
 
     model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
 
-    conn = sqlite3.connect("search.db")
-
-    print(conn.execute(
-        "SELECT COUNT(*) FROM search"
-    ).fetchone())
-
-    print(conn.execute(
-        "SELECT COUNT(*) FROM employee"
-    ).fetchone())
-
-    print(conn.execute(
-        "SELECT COUNT(*) FROM osiris"
-    ).fetchone())
-
-    print(conn.execute(
-        "SELECT COUNT(*) FROM repo"
-    ).fetchone())
+    # conn = sqlite3.connect("search.db")
+    #
+    # print(conn.execute(
+    #     "SELECT COUNT(*) FROM search"
+    # ).fetchone())
+    #
+    # print(conn.execute(
+    #     "SELECT COUNT(*) FROM employee"
+    # ).fetchone())
+    #
+    # print(conn.execute(
+    #     "SELECT COUNT(*) FROM osiris"
+    # ).fetchone())
+    #
+    # print(conn.execute(
+    #     "SELECT COUNT(*) FROM repo"
+    # ).fetchone())
 
     print(emb is not None)
     print(meta is not None)
 
-    print(conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    ).fetchall())
+    # print(conn.execute(
+    #     "SELECT name FROM sqlite_master WHERE type='table'"
+    # ).fetchall())
 
     # R = pd.read_parquet("created_data/cleaned_data/repo.parquet")
     # E = pd.read_csv("created_data/cleaned_data/employee.csv")
@@ -94,16 +96,15 @@ def load_resources():
 
 
 def get_connection():
-
-   conn = sqlite3.connect(
-        "search.db",
+    conn = sqlite3.connect(
+        PATHS["search.db"],
         check_same_thread=False
     )
-   conn.execute("PRAGMA journal_mode=WAL;")
-   conn.execute("PRAGMA synchronous=NORMAL;")
-   conn.execute("PRAGMA temp_store=MEMORY;")
-   conn.execute("PRAGMA cache_size=-64000;")
-   return conn
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA temp_store=MEMORY;")
+    conn.execute("PRAGMA cache_size=-64000;")
+    return conn
 
 # embeddings, meta, model = load_resources()
 # conn = get_connection()

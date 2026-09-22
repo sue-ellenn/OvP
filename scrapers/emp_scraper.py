@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 import os
 import glob
 
-from scrapers.sc_utils import content_hash
+from sc_utils import content_hash
 from db.employee_index import create_employee_index, get_employee_index, update_employee_index
 
 create_employee_index()
