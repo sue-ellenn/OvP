@@ -8,6 +8,7 @@ from io import BytesIO
 import requests
 import sys
 import os
+
 # os.chdir('..')
 # sys.path.insert(1, os.getcwd())
 sys.path.append(str(Path(__file__).resolve().parent.parent))
@@ -49,6 +50,7 @@ TOP_FINAL = 0
 embeddings, meta, model = load_resources()
 conn = get_connection()
 
+
 # print("all columns: ", )
 #
 # print(pd.read_sql("PRAGMA table_info(employee)", conn))
@@ -72,6 +74,8 @@ conn = get_connection()
 
 def create_linkedin_url(query):
     return f"https://www.linkedin.com/search/results/people/?keywords={quote(query)}"
+
+
 def render_single_result(result, conn):
     """
     generates a single result in the required format
@@ -117,8 +121,10 @@ def render_single_result(result, conn):
         if not courses.empty:
             st.markdown("### Geeft onderwijs in:")
 
-            for _, course in courses.iterrows():
-                st.write(f"- {course['course']}")
+            with st.expander("Onderwijs"):
+                for _, course in courses.iterrows():
+                    # add course name
+                    st.write(f"- {course['course']}: {None}")
 
 
     elif source == "Osiris":
@@ -241,6 +247,7 @@ def render_single_result(result, conn):
 # UI building
 st.set_page_config(page_title="Expert Finder", page_icon="📈")
 
+
 # if "selected_terms" not in st.session_state:
 #     st.session_state.selected_terms = []
 
@@ -286,8 +293,6 @@ st.info(
     "Probeer zinnen zoals 'ik ben op zoek naar ...' te vermijden.", icon="⚠️"
 )
 
-
-
 # st.warning(
 #         "NL: Deze tool is de eerste versie van een ontwikkeling gedaan voor Radboud Universiteit - Onderwijs voor Professionals (OvP).\n"
 #         "Het werkt het beste op simpele trefwoorden zoals 'ethiek' of 'artificial intelligence'.\n"
@@ -297,6 +302,27 @@ st.info(
 
 query = st.text_input("Zoekterm(en)/Search term(s)")
 TOP_FINAL = st.number_input("Max resultaten/results", min_value=1, max_value=150, value=10)
+
+# -----------------------------------
+# FIXME
+@st.dialog("Mijn Pop-up Venster")
+def toon_popup():
+    st.write("Dit is de inhoud van het pop-upvenster.")
+    if st.button("Sluiten"):
+        st.rerun()
+
+
+if st.button("Open pop-up"):
+    toon_popup()
+
+# Pop_over is beter
+# Add pop_over per professional met al hun info
+# TODO FIXME
+with st.popover("Open pop-over"):
+    st.write("Hallo vanuit de pop-over!")
+    naam = st.text_input("Wat is je naam?")
+
+# -----------------------------------
 
 selected_terms = []
 
@@ -371,6 +397,7 @@ print("-------------------------")
 print("-------------------------")
 
 # streamlit run Hello.py --server.runOnSave true
+
 """
 
 .venv\Scripts\activate

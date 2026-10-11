@@ -159,6 +159,7 @@ with st.expander("AI modus"):
 """
 
 .venv\Scripts\activate
+cd OvP
 uv run streamlit run Hello.py --server.runOnSave true
 
 """
