@@ -1,3 +1,8 @@
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+
 from pipeline.update_database import update_database
 from pipeline.update_embeddings import update_embeddings
 

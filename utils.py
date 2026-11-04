@@ -9,6 +9,7 @@ from pathlib import Path
 from io import BytesIO
 import requests
 from collections import defaultdict
+import re
 
 # pd.read_csv("created_data/cleaned_data/repo.csv").to_parquet('created_data/cleaned_data/repo.parquet', compression="snappy")
 
@@ -59,6 +60,25 @@ def build_fts_query(user_query: str) -> str:
 
     return f"{exact} OR ({and_query}) OR ({or_query})"
 
+
+
+
+STOPWORDS = {
+    "ik", "je", "jij", "we", "wij", "ze", "zij", "het", "de", "een",
+    "en", "of", "maar", "dat", "die", "dit", "deze", "aan", "in", "op",
+    "voor", "van", "met", "over", "naar", "bij", "uit", "door", "om",
+    "is", "zijn", "ben", "was", "wordt", "kun", "kan", "kunnen", "wil",
+    "willen", "zoek", "zoeken", "iemand", "iets", "graag", "help", "helpen",
+    "geef", "geeft", "heb", "heeft", "hebben", "doet", "doen", "die", "er",
+    "welke", "wat", "wie", "waar", "hoe", "mij", "me", "mijn", "ons",
+    "onze", "hun", "heeft", "heeft", "relevant", "rond", "rondom"
+}
+
+
+def extract_search_terms(query: str) -> str:
+    words = re.findall(r"\b[\w'-]+\b", query.lower())
+    terms = [word for word in words if word not in STOPWORDS and len(word) > 2]
+    return " ".join(dict.fromkeys(terms)) or query.strip()
 
 def normalize_name(name):
     parts = name.lower().split()

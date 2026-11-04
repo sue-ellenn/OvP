@@ -8,17 +8,27 @@ from io import BytesIO
 import requests
 import sys
 import os
+import openai
 
 # os.chdir('..')
 # sys.path.insert(1, os.getcwd())
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-# print(sys.path)
+
+print("PATH: ", sys.path)
 from database import *
 from utils import *
 from search import *
+from llm_client import answer_question
+import inspect
+print("LLM CLIENT:", inspect.getfile(answer_question))
+print("SIGNATURE:", inspect.signature(answer_question))
 # os.chdir('pages')
 # from build_course_mapping import *
 from urllib.parse import quote
+
+api_key = st.secrets["LLM_API_KEY"]
+base_url = st.secrets["LLM_BASE_URL"]
+llm_model = st.secrets["LLM_MODEL"]
 
 # pd.read_csv("created_data/cleaned_data/repo.csv").to_parquet('created_data/cleaned_data/repo.parquet', compression="snappy")
 
@@ -45,7 +55,7 @@ FILES = {
 # embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
 
 TOP_FTS = 30
-TOP_FINAL = 0
+TOP_FINAL = 10
 
 embeddings, meta, model = load_resources()
 conn = get_connection()
@@ -245,7 +255,7 @@ def render_single_result(result, conn):
 
 # ----------------------------
 # UI building
-st.set_page_config(page_title="Expert Finder", page_icon="📈")
+st.set_page_config(page_title="Expert Finder", page_icon="🔎")
 
 
 # if "selected_terms" not in st.session_state:
@@ -300,8 +310,58 @@ st.info(
 
 # pass
 
-query = st.text_input("Zoekterm(en)/Search term(s)")
-TOP_FINAL = st.number_input("Max resultaten/results", min_value=1, max_value=150, value=10)
+
+# AI-assistent voor Expert finder
+
+st.subheader("AI-assistent")
+
+if "ai_history" not in st.session_state:
+    st.session_state.ai_history = []
+
+if "ai_results" not in st.session_state:
+    st.session_state.ai_results = None
+
+for message in st.session_state.ai_history:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+query = st.chat_input("Waar ben je naar op zoek?")
+
+if query:
+    history = st.session_state.ai_history.copy()
+
+    with st.chat_message("user"):
+        st.markdown(query)
+
+    with st.chat_message("assistant"):
+        with st.spinner("Zoekresultaten ophalen en antwoord genereren..."):
+            try:
+                answer, results = answer_question(query, history, conn)
+                st.markdown(answer)
+
+                st.session_state.ai_history.extend([
+                    {"role": "user", "content": query},
+                    {"role": "assistant", "content": answer},
+                ])
+                st.session_state.ai_results = results
+
+            except Exception as e:
+                st.error(f"De AI-assistent kon geen antwoord geven: {e}")
+
+if st.session_state.ai_results is not None:
+    with st.expander("Bekijk de onderliggende zoekresultaten"):
+        results = st.session_state.ai_results
+        if isinstance(results, pd.DataFrame):
+            st.dataframe(results, use_container_width=True)
+        else:
+            st.write(results)
+
+
+# query = st.text_input("Zoekterm(en)/Search term(s)")
+# TOP_FINAL = st.number_input("Max resultaten/results", min_value=1, max_value=150, value=10)
+
+with st.chat_message("assistant"):
+    st.write("Hello human")
 
 # -----------------------------------
 # FIXME
@@ -311,16 +371,16 @@ def toon_popup():
     if st.button("Sluiten"):
         st.rerun()
 
-
-if st.button("Open pop-up"):
-    toon_popup()
-
-# Pop_over is beter
-# Add pop_over per professional met al hun info
-# TODO FIXME
-with st.popover("Open pop-over"):
-    st.write("Hallo vanuit de pop-over!")
-    naam = st.text_input("Wat is je naam?")
+#
+# if st.button("Open pop-up"):
+#     toon_popup()
+#
+# # Pop_over is beter
+# # Add pop_over per professional met al hun info
+# # TODO FIXME
+# with st.popover("Open pop-over"):
+#     st.write("Hallo vanuit de pop-over!")
+#     naam = st.text_input("Wat is je naam?")
 
 # -----------------------------------
 
@@ -399,9 +459,9 @@ print("-------------------------")
 # streamlit run Hello.py --server.runOnSave true
 
 """
-
+cd OvP
 .venv\Scripts\activate
-cd OvP/pages
+cd pages
 uv run streamlit run 1_Expert_Finder.py --server.runOnSave true
 
 """

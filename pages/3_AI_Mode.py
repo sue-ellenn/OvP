@@ -363,6 +363,6 @@ print("-------------------------")
 """
 .venv\Scripts\activate     
 cd OvP/pages
-uv run streamlit run 2_AI_Mode.py --server.runOnSave true
+uv run streamlit run 3_AI_Mode.py --server.runOnSave true
 
 """

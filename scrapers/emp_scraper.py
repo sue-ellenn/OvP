@@ -13,10 +13,14 @@ from datetime import datetime, timedelta
 import os
 import glob
 
-from sc_utils import content_hash
-from db.employee_index import create_employee_index, get_employee_index, update_employee_index
+# import sys
+# from pathlib import Path
+# sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-create_employee_index()
+from scrapers.sc_utils import content_hash
+# from db.employee_index import get_employee_index, update_employee_index
+
+
 
 file_headers = ["Name", "Url", "Faculties", "Keywords", "Onderzoeksthema", "Onderzoeksgroep", "Publicaties",
                 "Onderzoeksbeurzen en -prijzen", "Projecten", "Onderwijs", "In de media", "Curriculum Vitae",
@@ -332,5 +336,5 @@ if __name__ == "__main__":
     print(df[["Name", "Url"]].head())
     print(df.head(3))
     print("-------------------------------------")
-    index = get_employee_index()
-    print("Aantal geïndexeerde employees:", len(index))
+    # index = get_employee_index()
+    # print("Aantal geïndexeerde employees:", len(index))

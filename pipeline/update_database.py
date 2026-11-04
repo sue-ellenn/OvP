@@ -1,5 +1,11 @@
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 from scrapers.emp_scraper import scrape_employee, scrape_all_employees
+from scrapers.sc_utils import *
 from db.db import get_connection
+
 
 
 def update_database():

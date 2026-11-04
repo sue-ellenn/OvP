@@ -189,7 +189,7 @@ def scrape_full_repo():
 
         if not df.empty:
             all_data.append(df)
-        break
+        # break
 
     return pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
 
