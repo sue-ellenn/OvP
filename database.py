@@ -116,94 +116,56 @@ def load_resources():
     return emb, meta, model  # , E, O, R
 
 
-# def get_connection():
-#     print("DATABASE:", PATHS["search.db"].resolve())
-#     print("SIZE:", PATHS["search.db"].stat().st_size)
-#
-#     with sqlite3.connect(PATHS["search.db"]) as test:
-#         tables = test.execute("""
-#             SELECT name FROM sqlite_master
-#             WHERE type='table'
-#         """).fetchall()
-#
-#         print("TABLES:", tables)
-#
-#     db_path = PATHS["search.db"]
-#
-#     print("DATABASE PAD:", db_path.resolve())
-#     print("BESTAAT:", db_path.exists())
-#     print("GROOTTE:", db_path.stat().st_size if db_path.exists() else 0)
-#
-#     with sqlite3.connect(db_path) as test_conn:
-#         print("AANWEZIGE TABELLEN:", test_conn.execute(
-#             "SELECT name FROM sqlite_master WHERE type='table'"
-#         ).fetchall())
-#
-#
-#     print("----------")
-#     print("DB_PATH:", DB_PATH.resolve())
-#     print("PATHS DB:", PATHS["search.db"].resolve())
-#     print("BESTAAT:", PATHS["search.db"].exists())
-#     print("GROOTTE:", PATHS["search.db"].stat().st_size)
-#
-#     db_path = PATHS["search.db"]
-#
-#     if not db_path.exists() or db_path.stat().st_size == 0:
-#         raise FileNotFoundError(f"Database missing or empty: {db_path}")
-#
-#     conn = sqlite3.connect(
-#         db_path,
-#         check_same_thread=False
-#     )
-#
-#     tables = conn.execute(
-#         "SELECT name FROM sqlite_master WHERE type='table'"
-#     ).fetchall()
-#
-#     required = {"employee", "osiris", "repo", "course_employee", "search"}
-#     missing = required - {t[0] for t in tables}
-#
-#     if missing:
-#         conn.close()
-#         raise RuntimeError(f"Missing database tables: {missing}")
-#
-#     conn.execute("PRAGMA journal_mode=WAL;")
-#     conn.execute("PRAGMA synchronous=NORMAL;")
-#     conn.execute("PRAGMA temp_store=MEMORY;")
-#     conn.execute("PRAGMA cache_size=-64000;")
-#
-#     return conn
-
 def get_connection():
+    print("DATABASE:", PATHS["search.db"].resolve())
+    print("SIZE:", PATHS["search.db"].stat().st_size)
+
+    with sqlite3.connect(PATHS["search.db"]) as test:
+        tables = test.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table'
+        """).fetchall()
+
+        print("TABLES:", tables)
+
     db_path = PATHS["search.db"]
 
-    if not db_path.exists():
-        raise FileNotFoundError(f"Database not found: {db_path}")
+    print("DATABASE PAD:", db_path.resolve())
+    print("BESTAAT:", db_path.exists())
+    print("GROOTTE:", db_path.stat().st_size if db_path.exists() else 0)
 
-    conn = sqlite3.connect(db_path, check_same_thread=False)
+    with sqlite3.connect(db_path) as test_conn:
+        print("AANWEZIGE TABELLEN:", test_conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall())
 
-    tables = conn.execute("""
-        SELECT name FROM sqlite_master WHERE type='table'
-    """).fetchall()
 
-    table_names = [t[0] for t in tables]
+    print("----------")
+    print("DB_PATH:", DB_PATH.resolve())
+    print("PATHS DB:", PATHS["search.db"].resolve())
+    print("BESTAAT:", PATHS["search.db"].exists())
+    print("GROOTTE:", PATHS["search.db"].stat().st_size)
 
-    info = {
-        "Database path": str(db_path.resolve()),
-        "File size (MB)": round(db_path.stat().st_size / 1024**2, 2),
-        "Tables": table_names,
-        "Employee count": conn.execute("SELECT COUNT(*) FROM employee").fetchone()[0] if "employee" in table_names else "Missing",
-    }
+    db_path = PATHS["search.db"]
 
-    st.write("DATABASE DEBUG:", info)
+    if not db_path.exists() or db_path.stat().st_size == 0:
+        raise FileNotFoundError(f"Database missing or empty: {db_path}")
+
+    conn = sqlite3.connect(
+        db_path,
+        check_same_thread=False
+    )
+
+    tables = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()
 
     required = {"employee", "osiris", "repo", "course_employee", "search"}
-    missing = required - set(table_names)
+    missing = required - {t[0] for t in tables}
 
     if missing:
         conn.close()
-        st.error(f"Missing tables: {missing}")
-        st.stop()
+        raise RuntimeError(f"Missing database tables: {missing}")
 
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
@@ -211,6 +173,44 @@ def get_connection():
     conn.execute("PRAGMA cache_size=-64000;")
 
     return conn
+
+# def get_connection():
+#     db_path = PATHS["search.db"]
+#
+#     if not db_path.exists():
+#         raise FileNotFoundError(f"Database not found: {db_path}")
+#
+#     conn = sqlite3.connect(db_path, check_same_thread=False)
+#
+#     tables = conn.execute("""
+#         SELECT name FROM sqlite_master WHERE type='table'
+#     """).fetchall()
+#
+#     table_names = [t[0] for t in tables]
+#
+#     info = {
+#         "Database path": str(db_path.resolve()),
+#         "File size (MB)": round(db_path.stat().st_size / 1024**2, 2),
+#         "Tables": table_names,
+#         "Employee count": conn.execute("SELECT COUNT(*) FROM employee").fetchone()[0] if "employee" in table_names else "Missing",
+#     }
+#
+#     st.write("DATABASE DEBUG:", info)
+#
+#     required = {"employee", "osiris", "repo", "course_employee", "search"}
+#     missing = required - set(table_names)
+#
+#     if missing:
+#         conn.close()
+#         st.error(f"Missing tables: {missing}")
+#         st.stop()
+#
+#     conn.execute("PRAGMA journal_mode=WAL;")
+#     conn.execute("PRAGMA synchronous=NORMAL;")
+#     conn.execute("PRAGMA temp_store=MEMORY;")
+#     conn.execute("PRAGMA cache_size=-64000;")
+#
+#     return conn
 
 
 
