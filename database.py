@@ -21,29 +21,37 @@ FILES = {
 
 # BASE_DIR = Path(".")
 
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(exist_ok=True)
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "data" / "search.db"
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+DB_PATH = DATA_DIR / "search.db"
 
 PATHS = {
-    "search.db": DATA_DIR / "search.db",
+    "search.db": DB_PATH,
     "embeddings.npy": DATA_DIR / "embeddings.npy",
     "meta.npy": DATA_DIR / "meta.npy"
 }
 
-
 def download_if_missing():
     for fname, url in FILES.items():
         path = PATHS[fname]
-        if not path.exists():
-            with st.spinner(f"Downloading {fname}..."):
-                r = requests.get(url, stream=True)
-                r.raise_for_status()
-                with open(path, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
+        path.parent.mkdir(parents=True, exist_ok=True)
 
+        with st.spinner(f"Downloading {fname}..."):
+            r = requests.get(url, timeout=180)
+            r.raise_for_status()
+
+            temp_path = path.with_suffix(path.suffix + ".tmp")
+            temp_path.write_bytes(r.content)
+
+            if temp_path.stat().st_size == 0:
+                temp_path.unlink()
+                raise RuntimeError(f"Empty download: {fname}")
+
+            temp_path.replace(path)
+
+        print(f"Downloaded {fname}: {path.stat().st_size} bytes")
 
 # download_if_missing()
 
@@ -96,15 +104,32 @@ def load_resources():
 
 
 def get_connection():
+    db_path = PATHS["search.db"]
+
+    if not db_path.exists() or db_path.stat().st_size == 0:
+        raise FileNotFoundError(f"Database missing or empty: {db_path}")
+
     conn = sqlite3.connect(
-        PATHS["search.db"],
+        db_path,
         check_same_thread=False
     )
+
+    tables = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()
+
+    required = {"employee", "osiris", "repo", "course_employee", "search"}
+    missing = required - {t[0] for t in tables}
+
+    if missing:
+        conn.close()
+        raise RuntimeError(f"Missing database tables: {missing}")
+
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA temp_store=MEMORY;")
     conn.execute("PRAGMA cache_size=-64000;")
-    return conn
 
+    return conn
 # embeddings, meta, model = load_resources()
 # conn = get_connection()
