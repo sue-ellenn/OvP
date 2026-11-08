@@ -9,6 +9,7 @@ from pathlib import Path
 from io import BytesIO
 import requests
 from collections import defaultdict
+import re
 
 # pd.read_csv("created_data/cleaned_data/repo.csv").to_parquet('created_data/cleaned_data/repo.parquet', compression="snappy")
 
@@ -49,16 +50,43 @@ def cosine_sim(a, b):
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 
+
+import re
+
 def build_fts_query(user_query: str) -> str:
-    terms = user_query.strip().split()
+    terms = re.findall(r"[^\W_]+", user_query.lower(), flags=re.UNICODE)
+
+    if not terms:
+        return ""
+
     if len(terms) == 1:
         return terms[0]
-    exact = f'"{user_query}"'
+
+    exact = f'"{" ".join(terms)}"'
     and_query = " AND ".join(terms)
     or_query = " OR ".join(terms)
 
     return f"{exact} OR ({and_query}) OR ({or_query})"
 
+
+
+
+STOPWORDS = {
+    "ik", "je", "jij", "we", "wij", "ze", "zij", "het", "de", "een",
+    "en", "of", "maar", "dat", "die", "dit", "deze", "aan", "in", "op",
+    "voor", "van", "met", "over", "naar", "bij", "uit", "door", "om",
+    "is", "zijn", "ben", "was", "wordt", "kun", "kan", "kunnen", "wil",
+    "willen", "zoek", "zoeken", "iemand", "iets", "graag", "help", "helpen",
+    "geef", "geeft", "heb", "heeft", "hebben", "doet", "doen", "die", "er",
+    "welke", "wat", "wie", "waar", "hoe", "mij", "me", "mijn", "ons",
+    "onze", "hun", "heeft", "heeft", "relevant", "rond", "rondom"
+}
+
+
+def extract_search_terms(query: str) -> str:
+    words = re.findall(r"\b[\w'-]+\b", query.lower())
+    terms = [word for word in words if word not in STOPWORDS and len(word) > 2]
+    return " ".join(dict.fromkeys(terms)) or query.strip()
 
 def normalize_name(name):
     parts = name.lower().split()
@@ -67,8 +95,70 @@ def normalize_name(name):
         "last": parts[-1] if parts else ""
     }
 
+
 def normalize(v):
     return v / np.linalg.norm(v)
+
+
+def get_employee(name, conn):
+    query = """
+    SELECT *
+    FROM employee
+    WHERE name = ?
+    """
+
+    return pd.read_sql_query(query, conn, params=(name,))
+
+
+def get_osiris_course(course, conn):
+    query = """
+    SELECT *
+    FROM osiris
+    WHERE cursus = ?
+    """
+
+    pd.read_sql_query(query, conn, params=(course,))
+
+
+def get_repo_paper(title, conn):
+    query = """
+    SELECT *
+    FROM repo
+    WHERE title = ?
+    """
+
+    return pd.read_sql_query(query, conn, params=(title,))
+
+
+def get_employees_for_course(course, conn):
+    query = """
+    SELECT
+        employee,
+        employee_url,
+        match_score
+
+    FROM course_employee
+
+    WHERE course = ?
+
+    ORDER BY match_score DESC
+
+    """
+
+    return pd.read_sql_query(query, conn, params=(course,))
+
+
+def get_courses_for_employee(employee, conn):
+    query = """
+    SELECT
+        course
+
+    FROM course_employee
+
+    WHERE employee = ?
+    """
+
+    return pd.read_sql_query(query, conn, params=(employee,))
 
 
 def docent_match(employee_name, docent_rol):
@@ -100,28 +190,68 @@ def get_docent_cursussen(name, O, max_items=3):
     )
     return O[mask][["CURSUS", "LANGE_NAAM_NL", "DOEL"]].head(max_items)
 
-def get_employees_for_course(course_code, conn):
 
-    df = pd.read_sql_query(
-        """
-        SELECT employee
-        FROM course_employee
-        WHERE course = ?
-        """,
+def get_employees_for_course(course, conn):
+    query = """
+    SELECT 
+        employee,
+        employee_url,
+        match_score
+
+    FROM course_employee
+
+    WHERE course = ?
+    """
+
+    df = pd.read_sql(
+        query,
         conn,
-        params=(course_code,)
+        params=(course,)
     )
 
-    return df["employee"].tolist()
-
-def get_osiris_course(course_code, O):
-    row = O[O["CURSUS"] == course_code]
-    return None if row.empty else row.iloc[0]
+    return df
 
 
-def get_repository_record(title, R):
-    row = R[R["title"] == title]
-    return None if row.empty else row.iloc[0]
+def get_osiris_course(name, conn):
+
+    query = """
+    SELECT *
+    FROM osiris
+    WHERE CURSUS = ?
+    LIMIT 1
+    """
+
+    result = pd.read_sql_query(
+        query,
+        conn,
+        params=(name,)
+    )
+
+    if result.empty:
+        return None
+
+    return result.iloc[0]
+
+
+def get_repository_record(title, conn):
+
+    query = """
+    SELECT *
+    FROM repo
+    WHERE title = ?
+    LIMIT 1
+    """
+
+    row = pd.read_sql_query(
+        query,
+        conn,
+        params=(title,)
+    )
+
+    if row.empty:
+        return None
+
+    return row.iloc[0]
 
 
 def interleave(dfs, max_total):
@@ -145,4 +275,4 @@ def interleave(dfs, max_total):
 
     return pd.DataFrame(result)
 
-# streamlit run app2.py --server.runOnSave true
+# streamlit run Hello.py --server.runOnSave true

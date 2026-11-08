@@ -1,13 +1,11 @@
 import base64
 import streamlit as st
+import sqlite3
 import numpy as np
-from pathlib import Path
-from io import BytesIO
+from sentence_transformers import SentenceTransformer
+import pandas as pd
 import requests
-from database import *
-from utils import *
-from search import *
-# from build_course_mapping import *
+from pathlib import Path
 
 # pd.read_csv("created_data/cleaned_data/repo.csv").to_parquet('created_data/cleaned_data/repo.parquet', compression="snappy")
 
@@ -16,29 +14,158 @@ FILES = {
     "embeddings.npy": "https://github.com/sue-ellenn/OvP/releases/download/data/embeddings.npy",
     "meta.npy": "https://github.com/sue-ellenn/OvP/releases/download/data/meta.npy"
 }
-# https://github.com/sue-ellenn/OvP/releases/download/data/embeddings.npy
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 
+# @st.cache_resource
+# def load_repo():
+#     if not REPO_PATH.exists():
+#         with st.spinner("Downloading repository data..."):
+#             r = requests.get(REPO_URL)
+#             r.raise_for_status()
+#             REPO_PATH.write_bytes(r.content)
+#     return pd.read_parquet(REPO_PATH)
+
+# return pd.read_parquet(REPO_PATH)
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 DB_PATH = "search.db"
-EMBEDDINGS_PATH = FILES["embeddings.npy"]
-
-response = requests.get(EMBEDDINGS_PATH)
-response.raise_for_status()
-
-embeddings = np.load(BytesIO(response.content))
-embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+EMBEDDINGS_PATH = "created_data/DB_backups/embeddings.npy"
 
 TOP_FTS = 100
-TOP_FINAL = 0
+TOP_FINAL = 20
+MAX_PUBLICATIONS = 20
+MAX_COURSES = 20
+
+
+def download_if_missing():
+    for fname, url in FILES.items():
+        path = DATA_DIR / fname
+        if not path.exists():
+            with st.spinner(f"Downloading {fname}..."):
+                r = requests.get(url, stream=True)
+                r.raise_for_status()
+                with open(path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+
+# download_if_missing()
+
+def cosine_sim(a, b):
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+
+def build_fts_query(user_query: str) -> str:
+    terms = user_query.strip().split()
+    if len(terms) == 1:
+        return terms[0]
+    phrase = f"\"{' '.join(terms)}\""
+    and_query = " AND ".join(terms)
+    return f"{phrase} OR ({and_query})"
+
+
+def normalize_name(name):
+    parts = name.lower().split()
+    return {
+        "initial": parts[0][0] if parts else "",
+        "last": parts[-1] if parts else ""
+    }
+
+
+def docent_match(employee_name, docent_rol):
+    if not isinstance(docent_rol, str):
+        return False
+    emp = normalize_name(employee_name)
+    rol = docent_rol.lower()
+    return emp["last"] in rol and emp["initial"] in rol
+
+
+def get_themas(employee_row):
+    themas = []
+    for col in ["Keywords", "Onderzoeksthema", "Onderzoeksgroep"]:
+        if col in employee_row and pd.notna(employee_row[col]):
+            themas.extend(employee_row[col].split(","))
+    return sorted(set(t.strip() for t in themas if len(t.strip()) > 2))
+
+
+def get_publicaties(name, R, max_items=3):
+    last_name = name.split()[-1].lower()
+    pubs = R[R["authors"].str.lower().str.contains(last_name, na=False)]
+    pubs = pubs.sort_values("publishing_info", ascending=False)
+    return pubs[["title", "publishing_info", "title_url"]].head(max_items)
+
+
+def get_docent_cursussen(name, O, max_items=3):
+    mask = O["DOCENT_ROL"].apply(
+        lambda x: docent_match(name, x)
+    )
+    return O[mask][["CURSUS", "LANGE_NAAM_NL", "DOEL"]].head(max_items)
+
+
+def get_osiris_course(course_code, O):
+    row = O[O["CURSUS"] == course_code]
+    return None if row.empty else row.iloc[0]
+
+
+def get_repository_record(title, R):
+    row = R[R["title"] == title]
+    return None if row.empty else row.iloc[0]
+
+
+@st.cache_resource(show_spinner=False)
+def load_resources():
+    download_if_missing()
+    conn = sqlite3.connect(DATA_DIR / "search.db", check_same_thread=False)
+    emb = np.load(DATA_DIR / "embeddings.npy", mmap_mode="r")
+    meta = np.load(DATA_DIR / "meta.npy", allow_pickle=True)
+    model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+
+    R = pd.read_parquet("created_data/cleaned_data/repo.parquet")
+    E = pd.read_csv("created_data/cleaned_data/employee.csv")
+    O = pd.read_csv("created_data/cleaned_data/osiris.csv")
+
+    return conn, emb, meta, model, E, O, R
 
 
 conn, embeddings, meta, model, E, O, R = load_resources()
 
+
+def run_search(query):
+    fts_query = build_fts_query(query)
+
+    sql = """
+    SELECT rowid, name, source, bm25(search) AS rank
+    FROM search
+    WHERE search MATCH ?
+    ORDER BY rank
+    LIMIT ?
+    """
+
+    df = pd.read_sql_query(
+        sql,
+        conn,
+        params=(fts_query, TOP_FTS)
+    )
+
+    if df.empty:
+        return df
+
+    q_emb = model.encode(query)
+    # try:
+    df["semantic_score"] = [
+        cosine_sim(q_emb, embeddings[rowid - 1])
+        for rowid in df["rowid"]
+    ]
+
+    return df.sort_values(
+        "semantic_score", ascending=False
+    ).head(TOP_FINAL)
+
+    # except:
+    #     return None
 
 
 def render_single_result(row, E, O, R):
@@ -91,26 +218,6 @@ def render_single_result(row, E, O, R):
         # st.markdown(f"**{course['LANGE_NAAM_NL']}**")
         st.caption(f"Vakcode: {course['CURSUS']}")
         st.markdown(f"**Docent(en):** {course['DOCENT_ROL']}")
-        employees = get_employees_for_course(
-            course["CURSUS"],
-            conn
-        )
-
-        if employees:
-
-            st.markdown("### Gerelateerde experts")
-
-            for employee in employees:
-                with st.expander(employee):
-                    render_single_result(
-                        pd.Series({
-                            "name": employee,
-                            "source": "Employees"
-                        }),
-                        E,
-                        O,
-                        R
-                    )
 
         with st.expander("Meer informatie"):
             st.markdown(f"**Inhoud:** {course['INHOUD']}")
@@ -155,8 +262,6 @@ def render_single_result(row, E, O, R):
 # ----------------------------
 # UI building
 st.set_page_config(page_title="", layout="wide")
-if "selected_terms" not in st.session_state:
-    st.session_state.selected_terms = []
 
 
 def get_base64_image(image_path):
@@ -204,66 +309,78 @@ st.warning(
 #         "Het werkt het beste op simpele trefwoorden zoals 'ethiek' of 'artificial intelligence'.\n"
 #         "Probeer zinnen zoals 'ik ben op zoek naar ...' te vermijden.")
 
-
-query = st.text_input("Zoekterm(en)/Search term(s)")
-TOP_FINAL = st.number_input("Max resultaten/results", min_value=1, max_value=150, value=50)
-
-selected_terms = []
+query = st.text_input("Zoekterm(en)/\nSearch term(s)")
+maximum = st.number_input("Max resultaten/results", min_value=1, max_value=150, value=20)
 
 if query:
-    # expanded search
-    dfs = run_search(query, conn, embeddings, meta, model, TOP_FTS)
-
-
-    # if not dfs:
-    if dfs is None:
+    results = run_search(query)
+    if results is None:
         st.markdown("_Geen publicatiedetails gevonden._")
         st.warning("Keyword not found. Try a different one.", icon="❗❗❗")
     else:
         TAB_LIMITS = {
-            "All": TOP_FINAL * 2,
-            "Osiris": max(5, TOP_FINAL),
-            "Employees": max(5, TOP_FINAL),
-            "Repo": max(5, TOP_FINAL),
+            "All": maximum,
+            "Osiris": max(5, maximum),
+            "Employees": max(5, maximum),
+            "Repo": max(5, maximum),
         }
+        # st.write(results.columns)
 
-        results = dfs.sort_values("final_score", ascending=False)
+        # Normalize BM25 rank (lower is better)
+        results["bm25_score"] = 1 / (1 + results["rank"])
 
-        # per bron
-        results_O = results[results["source"] == "Osiris"].head(TAB_LIMITS["Osiris"])
-        results_E = results[results["source"] == "Employees"].head(TAB_LIMITS["Employees"])
-        results_R = results[results["source"] == "Repo"].head(TAB_LIMITS["Repo"])
+        # If semantic_score exists, combine it
+        if "semantic_score" in results.columns:
+            results["final_score"] = (
+                    0.6 * results["semantic_score"] +
+                    0.4 * results["bm25_score"]
+            )
+        else:
+            results["final_score"] = results["bm25_score"]
 
-        # mix results
-        results_all = interleave(
-            [results_E, results_O, results_R],
-            TOP_FINAL
-        )
+        try:
+            # Ensure ordering
+            results = results.sort_values("semantic_score", ascending=False)
 
-        tabs = st.tabs(["All", "Osiris", "Employees", "Repository"])
+            # Per-source subsets
+            results_O = results[results["source"] == "Osiris"].head(TAB_LIMITS["Osiris"])
+            results_E = results[results["source"] == "Employees"].head(TAB_LIMITS["Employees"])
+            results_R = results[results["source"] == "Repo"].head(TAB_LIMITS["Repo"])
 
-        with tabs[0]:
-            for _, row in results_all.iterrows():
-                render_single_result(row, E, O, R)
-                st.markdown("---")
+            # Alles tab: interleaved, capped at 20
+            results_all = (
+                pd.concat([results_E, results_O, results_R])
+                .sort_values("final_score", ascending=False)
+                .head(TAB_LIMITS["All"])
+            )
 
-        with tabs[1]:
-            for _, row in results_O.iterrows():
-                render_single_result(row, E, O, R)
-                st.markdown("---")
+            if results.empty:
+                st.warning("No matches found.")
+            else:
+                tabs = st.tabs(["All", "Osiris", "Employees", "Repository"])
 
-        with tabs[2]:
-            for _, row in results_E.iterrows():
-                render_single_result(row, E, O, R)
-                st.markdown("---")
+                with tabs[0]:
+                    for _, row in results_all.iterrows():
+                        render_single_result(row, E, O, R)
+                        st.markdown("---")
 
-        with tabs[3]:
-            for _, row in results_R.iterrows():
-                render_single_result(row, E, O, R)
-                st.markdown("---")
-    # except Exception as e:
-    #     st.write("No matches found.")
-    #     st.warning("Invalid input", icon="❗")
-    #     # st.write(e)
+                with tabs[1]:
+                    for _, row in results_O.iterrows():
+                        render_single_result(row, E, O, R)
+                        st.markdown("---")
+
+                with tabs[2]:
+                    for _, row in results_E.iterrows():
+                        render_single_result(row, E, O, R)
+                        st.markdown("---")
+
+                with tabs[3]:
+                    for _, row in results_R.iterrows():
+                        render_single_result(row, E, O, R)
+                        st.markdown("---")
+        except Exception as e:
+            st.write("No matches found.")
+            st.warning("Invalid input", icon="❗")
+            # st.write(e)
 
 # streamlit run app2.py --server.runOnSave true

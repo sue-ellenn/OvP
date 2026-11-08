@@ -1,124 +1,204 @@
 import sqlite3
 import pandas as pd
-from utils import *
-from rapidfuzz import process, fuzz
-
 import re
 
-def normalize_name(name):
-    name = str(name).lower()
+from rapidfuzz import fuzz
 
-    # verwijder roepnaam tussen haakjes
-    name = re.sub(r"\(.*?\)", "", name)
+DATABASE = "search.db"
 
-    # verwijder punten
-    name = name.replace(".", "")
+def clean_text(text):
+    if pd.isna(text):
+        return ""
 
-    # dubbele spaties weg
-    name = " ".join(name.split())
+    text = str(text).lower()
 
-    return name
-
-
-def match_employee(docent):
-
-    docent = normalize_name(docent)
-
-    match = process.extractOne(
-        docent,
-        employee_lookup.keys(),
-        scorer=fuzz.token_sort_ratio
+    # urls verwijderen
+    text = re.sub(
+        r"https?://\S+",
+        " ",
+        text
     )
 
-    if match is None:
-        return None
-
-    matched_name, score, _ = match
-
-    if score < 90:
-        return None
-
-    return employee_lookup[matched_name]
-
-def get_docent_cursussen(employee_name, O):
-    mask = O["DOCENT_ROL"].apply(
-        lambda x: docent_match(employee_name, x)
+    # link, link1, link2 verwijderen
+    text = re.sub(
+        r"\blink\d*\b",
+        " ",
+        text
     )
 
-    return O.loc[mask, ["CURSUS"]]
+    # extern verwijderen
+    text = re.sub(
+        r"\bextern\b",
+        " ",
+        text
+    )
+
+    # speciale tekens verwijderen
+    text = re.sub(
+        r"[^a-z0-9\s]",
+        " ",
+        text
+    )
+
+    # dubbele spaties
+    text = " ".join(text.split())
+
+    return text
 
 
-EMPLOYEE_PATH = "created_data/cleaned_data/employee.csv"
-OSIRIS_PATH = "created_data/cleaned_data/osiris.csv"
-DATABASE = "data/search.db"
+def match_course(course_name, education_text):
+    course_name = clean_text(course_name)
 
-E = pd.read_csv(EMPLOYEE_PATH)
-O = pd.read_csv(OSIRIS_PATH)
+    education_text = clean_text(education_text)
 
-employee_lookup = {}
+    if not course_name:
+        return 0, "none"
 
-for _, row in E.iterrows():
+    if course_name in education_text:
+        return 100, "exact"
 
-    normalized = normalize_name(row["Name"])
+    token_score = fuzz.token_set_ratio(course_name, education_text)
 
-    employee_lookup[normalized] = {
-        "name": row["Name"],
-        "url": row["Url"]
-    }
+    partial_score = fuzz.partial_ratio(course_name, education_text)
 
+    score = max(token_score, partial_score)
+
+    if score >= 85:
+        return score, "fuzzy"
+
+    return score, "none"
 
 
 conn = sqlite3.connect(DATABASE)
+
+employees = pd.read_sql(
+    """
+    SELECT
+        name,
+        url,
+        onderwijs
+    FROM employee
+    """,
+    conn
+)
+
+courses = pd.read_sql(
+    """
+    SELECT
+        cursus,
+        lange_naam
+    FROM osiris
+    """,
+    conn
+)
+
+print("Employees:", len(employees))
+
+print("Courses:", len(courses))
+
+# dubbele vaknamen verwijderen
+
+courses = courses.drop_duplicates(subset=["cursus"])
+
+print("Unique courses:", len(courses))
+
+matches = []
+
+exact_matches = 0
+fuzzy_matches = 0
+
+print("matching: ")
+
+for _, employee in employees.iterrows():
+
+    education = employee["onderwijs"]
+
+    if pd.isna(education):
+        continue
+
+    for _, course in courses.iterrows():
+
+        score, match_type = match_course(course["lange_naam"], education)
+
+        if match_type != "none":
+
+            matches.append(
+                (
+                    course["cursus"],
+                    employee["name"],
+                    employee["url"],
+                    int(score)
+                )
+            )
+
+            if match_type == "exact":
+                exact_matches += 1
+
+            elif match_type == "fuzzy":
+                fuzzy_matches += 1
+
+print()
+print("Matches gevonden:", len(matches))
+
+print("Exact:", exact_matches)
+
+print("Fuzzy:", fuzzy_matches)
+
 cur = conn.cursor()
 
-cur.execute("DROP TABLE IF EXISTS course_employee")
-
-cur.execute("""
-CREATE TABLE course_employee(
-
-    course TEXT,
-
-    employee TEXT,
-
-    employee_url TEXT
+cur.execute(
+    """
+    DROP TABLE IF EXISTS course_employee
+    """
 )
-)
-""")
 
-rows = []
+cur.execute(
+    """
+    CREATE TABLE course_employee(
 
-for _, row in O.iterrows():
-
-    cursus = row["CURSUS"]
-
-    docent_rol = row["DOCENT_ROL"]
-    docenten = docent_rol.split(",")
-
-    for docent in docenten:
-
-        employee = match_employee(docent)
-
-        if employee is None:
-            continue
-
-    rows.append(
-
-        (
-            cursus,
-            employee["name"],
-            employee["url"]
-        )
+        course TEXT,
+        employee TEXT,
+        employee_url TEXT,
+        match_score INTEGER
 
     )
+    """
+)
 
 cur.executemany(
     """
     INSERT INTO course_employee
-    VALUES (?,?,?)
+    VALUES (?,?,?,?)
     """,
-    rows
+    matches
 )
 
 conn.commit()
+
+# checkas
+
+count = pd.read_sql(
+    """
+    SELECT COUNT(*)
+    FROM course_employee
+    """,
+    conn
+)
+
+print()
+print(count)
+
+examples = pd.read_sql(
+    """
+    SELECT *
+    FROM course_employee
+    LIMIT 10
+    """,
+    conn
+)
+
+print(examples)
 conn.close()
-# print("done")
+
+print()
+print("Done!")

@@ -6,3 +6,6 @@ search.db
 created_data/DB_backups/embeddings.npy
 *.npy
 *.db
+API_RU_CHAT.txt
+.streamlit/secrets.toml
+secrets.toml
