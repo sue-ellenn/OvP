@@ -27,7 +27,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "data" / "search.db"
 
 PATHS = {
-    "search.db": DB_PATH,
+    "search.db": DATA_DIR / "search.db",
     "embeddings.npy": DATA_DIR / "embeddings.npy",
     "meta.npy": DATA_DIR / "meta.npy"
 }
