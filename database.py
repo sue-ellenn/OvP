@@ -13,9 +13,9 @@ import time
 # pd.read_csv("created_data/cleaned_data/repo.csv").to_parquet('created_data/cleaned_data/repo.parquet', compression="snappy")
 
 FILES = {
-    "search.db": "https://github.com/sue-ellenn/OvP/releases/download/data/search.db",
-    "embeddings.npy": "https://github.com/sue-ellenn/OvP/releases/download/data/embeddings.npy",
-    "meta.npy": "https://github.com/sue-ellenn/OvP/releases/download/data/meta.npy"
+    "search.db": "https://github.com/sue-ellenn/OvP/releases/download/datav1/search.db",
+    "embeddings.npy": "https://github.com/sue-ellenn/OvP/releases/download/datav1/embeddings.npy",
+    "meta.npy": "https://github.com/sue-ellenn/OvP/releases/download/datav1/meta.npy"
 }
 # https://github.com/sue-ellenn/OvP/releases/download/data/embeddings.npy
 
