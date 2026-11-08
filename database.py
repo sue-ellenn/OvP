@@ -106,6 +106,17 @@ def load_resources():
 def get_connection():
     db_path = PATHS["search.db"]
 
+    print("DATABASE PAD:", db_path.resolve())
+    print("BESTAAT:", db_path.exists())
+    print("GROOTTE:", db_path.stat().st_size if db_path.exists() else 0)
+
+    with sqlite3.connect(db_path) as test_conn:
+        print("AANWEZIGE TABELLEN:", test_conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall())
+
+    db_path = PATHS["search.db"]
+
     if not db_path.exists() or db_path.stat().st_size == 0:
         raise FileNotFoundError(f"Database missing or empty: {db_path}")
 
