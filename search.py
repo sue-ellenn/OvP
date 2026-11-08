@@ -103,6 +103,7 @@ def get_similar_terms(query, model, embeddings, meta, top_k=5):
 # @st.cache_data(max_entries=150)
 def run_search(query, TOP_FTS, conn):
     start = time.time()
+    # query = query.replace(r"?*!*.*", "")
 
     fts_query = build_fts_query(query)
     print("FTS query:", fts_query)

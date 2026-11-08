@@ -13,13 +13,7 @@ from datetime import datetime, timedelta
 import os
 import glob
 
-# import sys
-# from pathlib import Path
-# sys.path.append(str(Path(__file__).resolve().parent.parent))
-
 from scrapers.sc_utils import content_hash
-# from db.employee_index import get_employee_index, update_employee_index
-
 
 
 file_headers = ["Name", "Url", "Faculties", "Keywords", "Onderzoeksthema", "Onderzoeksgroep", "Publicaties",
@@ -128,97 +122,8 @@ def get_employee_urls(page):
     # pass
 
 
-# def extract_employee_page(page, url, file_headers):
-#     page_soup = get_soup(page, url)
-#
-#     """
-#     ["Name", "Faculteit", "Keywords", "url", "Onderzoeksthema", "Onderzoeksgroep", "Publicaties",
-#      "Onderzoeksbeurzen en -prijzen", "Projecten", "Onderwijs", "In de media", "Curriculum Vitae",
-#      "Nevenwerkzaamheden"] )
-#     """
-#
-#     data_dict = {}
-#     # faculty/affiliations names
-#     faculty_names = page_soup.find("p", class_="text text--intro")
-#
-#     if faculty_names:
-#
-#         data_dict["Faculties"] = list(faculty_names.stripped_strings)
-#     else:
-#         data_dict["Faculties"] = "None found"
-#
-#     print("Faculty names:", data_dict["Faculties"])
-#
-#     # small_header_soup = page_soup.find_all("div", class_="profile__content")
-#
-#     # onderzoeksthemas
-#     small_headers = page_soup.find_all("span", class_="label")
-#
-#     # print("Small headers: ", small_headers)
-#
-#     if small_headers:
-#         for h in small_headers:
-#             h_str = h.string
-#             # print("string: ", h_str)
-#
-#             if h_str in file_headers:
-#                 # print("header: ", h.find_next("ul", class_="list"))
-#                 print("--------------")
-#                 print("Header:", h_str)
-#                 link_list = h.find_next("ul", class_="list")
-#                 links = link_list.find_all("a")
-#
-#                 themas = []
-#                 if links:
-#                     for link in links:
-#                         link_str = link.string
-#                         themas.append((link_str, link['href']))
-#                         print(link_str)
-#                     # print("list:", themas)
-#                     #     print(h_str)
-#
-#                     data_dict[h_str] = themas
-#
-#     keywords = page_soup.find_all("span", class_="meta-data__item")
-#     if keywords:
-#         kw_list = []
-#         for kw in keywords:
-#             kw_str = kw.string
-#             kw_list.append(kw_str)
-#         data_dict["Keywords"] = kw_list
-#         print("Keywords:", data_dict["Keywords"])
-#     big_headers = page_soup.find_all("h3", class_=["accordion-item"])
-#     # print("Big headers: ", big_headers)
-#
-#     if big_headers:
-#         for h in big_headers:
-#             h_str = h.get_text(strip=True)
-#             print("--------------")
-#             print("Big Header:", h_str)
-#
-#             if h_str in file_headers:
-#                 link_list = h.find_next("ul", class_="list")
-#                 if link_list:
-#                     papers = link_list.find_all("li")  # "span"
-#                     # urls = link_list.find_all("a")
-#
-#                     themas = []
-#                     if papers:
-#                         for pap in papers:
-#                             url = pap.find_next("a")
-#                             tuptup = (pap.get_text(strip=True), url["href"])
-#                             # print("Tuple: ", tuptup)
-#                             themas.append(tuptup)
-#                             print(tuptup)
-#
-#                         data_dict[h_str] = themas
-#
-#     return data_dict
-
 
 def extract_employee_page(page_soup, file_headers):
-    # page_soup = get_soup(page, url)
-    # page_soup = get_soup(page, url)
 
     data_dict = {}
 
@@ -336,5 +241,3 @@ if __name__ == "__main__":
     print(df[["Name", "Url"]].head())
     print(df.head(3))
     print("-------------------------------------")
-    # index = get_employee_index()
-    # print("Aantal geïndexeerde employees:", len(index))

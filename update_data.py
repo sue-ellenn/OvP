@@ -1,16 +1,13 @@
 
 import sqlite3
 import shutil
+import json
 from datetime import datetime
-import sys
 from pathlib import Path
-# sys.path.append(str(Path(__file__).resolve().parent))
-from build_index import build_index
 
 import pandas as pd
 
-from scrapers.emp_scraper import scrape_all_employees
-from scrapers.repo_scraper import scrape_full_repo
+from build_index import build_index
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -25,22 +22,45 @@ def create_backup():
     print(f"Backup gemaakt: {backup}")
 
 
-def validate_data(employees, repo):
-    if employees.empty or not {"Name", "Url"}.issubset(employees.columns):
-        raise ValueError("Employee-data ontbreekt of mist Name/Url.")
 
-    if repo.empty or not {"title", "title_url", "department"}.issubset(repo.columns):
-        raise ValueError("Repo-data ontbreekt of mist verplichte kolommen.")
+def safe_scrape(source):
+    try:
+        if source == "Employees":
+            from scrapers.emp_scraper import scrape_all_employees
+            df = scrape_all_employees()
+            required = {"Name", "Url"}
+            key = "Url"
 
-    employees = employees.drop_duplicates(subset=["Url"])
-    repo = repo.drop_duplicates(subset=["title_url"])
+        elif source == "Repository":
+            from scrapers.repo_scraper import scrape_full_repo
+            df = scrape_full_repo()
+            required = {"title", "title_url", "department"}
+            key = "title_url"
 
-    return employees, repo
+        else:
+            raise ValueError(f"Onbekende databron: {source}")
 
+        if not isinstance(df, pd.DataFrame):
+            raise ValueError("Scraper heeft geen DataFrame teruggegeven.")
+
+        if df.empty:
+            raise ValueError("Geen gegevens ontvangen.")
+
+        if not required.issubset(df.columns):
+            missing = required - set(df.columns)
+            raise ValueError(f"Verplichte kolommen ontbreken: {missing}")
+
+        df = df.drop_duplicates(subset=[key])
+
+        print(f"{source}: {len(df)} records opgehaald.")
+        return df
+
+    except Exception as e:
+        print(f"{source} overgeslagen door fout: {type(e).__name__}: {e}")
+        return None
 
 def clean_value(value):
     if isinstance(value, (list, tuple, dict)):
-        import json
         return json.dumps(value, ensure_ascii=False)
 
     if value is None:
@@ -54,7 +74,7 @@ def clean_value(value):
 
 def update_table(conn, table, df, mapping, key):
     columns = {
-        row[1] for row in conn.execute(f"PRAGMA table_info({table})")
+        row[1] for row in conn.execute(f'PRAGMA table_info("{table}")')
     }
 
     inserted = 0
@@ -76,87 +96,130 @@ def update_table(conn, table, df, mapping, key):
         ).fetchone()
 
         if existing:
-            update_data = {k: v for k, v in data.items() if k != key}
+            update_values = {k: v for k, v in data.items() if k != key}
 
-            if update_data:
-                assignments = ", ".join(f'"{k}" = ?' for k in update_data)
+            if update_values:
+                assignments = ", ".join(f'"{k}" = ?' for k in update_values)
                 conn.execute(
                     f'UPDATE "{table}" SET {assignments} WHERE rowid = ?',
-                    (*update_data.values(), existing[0])
+                    (*update_values.values(), existing[0])
                 )
+
             updated += 1
+
         else:
             names = ", ".join(f'"{k}"' for k in data)
             placeholders = ", ".join("?" for _ in data)
+
             conn.execute(
                 f'INSERT INTO "{table}" ({names}) VALUES ({placeholders})',
                 tuple(data.values())
             )
+
             inserted += 1
 
     return {"inserted": inserted, "updated": updated}
 
 
-def update_database(employees, repo):
-    with sqlite3.connect(DB_PATH) as conn:
-        employee_mapping = {
-            "Name": "name",
-            "Url": "url",
-            "Faculties": "faculties",
-            "Keywords": "keywords",
-            "Onderzoeksthema": "onderzoeksthema",
-            "Onderzoeksgroep": "onderzoeksgroep",
-            "Publicaties": "publicaties",
-            "Onderwijs": "onderwijs"
-        }
 
-        repo_mapping = {
-            "title": "title",
-            "authors": "authors",
-            "department": "department",
-            "keywords": "keywords",
-            "title_url": "title_url",
-            "author_urls": "author_urls",
-            "publishing_info": "publishing_info"
-        }
+def update_database(employees=None, repo=None):
+    employee_mapping = {
+        "Name": "name",
+        "Url": "url",
+        "Faculties": "faculties",
+        "Keywords": "keywords",
+        "Onderzoeksthema": "onderzoeksthema",
+        "Onderzoeksgroep": "onderzoeksgroep",
+        "Publicaties": "publicaties",
+        "Onderwijs": "onderwijs"
+    }
 
-        employee_counts = update_table(
-            conn, "employee", employees, employee_mapping, "url"
-        )
+    repo_mapping = {
+        "title": "title",
+        "authors": "authors",
+        "department": "department",
+        "keywords": "keywords",
+        "title_url": "title_url",
+        "author_urls": "author_urls",
+        "publishing_info": "publishing_info"
+    }
 
-        repo_counts = update_table(
-            conn, "repo", repo, repo_mapping, "title_url"
-        )
+    sources = [
+        ("Employees", "employee", employees, employee_mapping, "url"),
+        ("Repository", "repo", repo, repo_mapping, "title_url")
+    ]
 
-    return employee_counts, repo_counts
+    counts = {}
+    conn = sqlite3.connect(DB_PATH)
 
+    try:
+        for name, table, df, mapping, key in sources:
+            if df is None:
+                counts[name] = {"status": "overgeslagen"}
+                continue
+
+            try:
+                # Iedere databron krijgt een eigen transactie
+                with conn:
+                    counts[name] = update_table(conn, table, df, mapping, key)
+
+                counts[name]["status"] = "bijgewerkt"
+
+            except Exception as e:
+                counts[name] = {"status": "fout", "error": str(e)}
+                print(f"Database-update {name} mislukt: {e}")
+
+    finally:
+        conn.close()
+
+    return counts
 
 def run_update():
-    print("Start employee scraper...")
-    employees = scrape_all_employees()
-    print(f"Employees gevonden: {len(employees)}")
-
-    print("\nStart Repo scraper...")
-    repo = scrape_full_repo()
-    print(f"Publicaties gevonden: {len(repo)}")
-
-    employees, repo = validate_data(employees, repo)
-
     if not DB_PATH.exists():
         raise FileNotFoundError(f"Database niet gevonden: {DB_PATH}")
 
+    print("\n========== START DATA-UPDATE ==========")
+
+    # Beide scrapers onafhankelijk uitvoeren
+    employees = safe_scrape("Employees")
+    repo = safe_scrape("Repository")
+
+    # Alleen doorgaan als minimaal één scraper data heeft opgehaald
+    if employees is None and repo is None:
+        print("\nGeen nieuwe data beschikbaar. Database blijft ongewijzigd.")
+        return
+
+    # Backup vóór databasewijzigingen
     create_backup()
 
-    employee_counts, repo_counts = update_database(employees, repo)
+    # Database bijwerken
+    counts = update_database(employees, repo)
 
-    print("\nDatabase bijgewerkt!")
-    print("Employees:", employee_counts)
-    print("Repo:", repo_counts)
+    print("\n========== DATABASE RESULTATEN ==========")
 
-    print("\nZoekindex en embeddings opnieuw opbouwen...")
-    build_index()
+    for source, result in counts.items():
+        print(f"{source}: {result}")
 
-    print("\nVolledige data-update afgerond!")
+    # Zoekindex alleen opnieuw bouwen als minimaal één update gelukt is
+    successful_updates = any(
+        result.get("status") == "bijgewerkt"
+        for result in counts.values()
+    )
+
+    if successful_updates:
+        print("\nZoekindex en embeddings opnieuw opbouwen...")
+
+        try:
+            build_index()
+            print("Zoekindex succesvol opnieuw opgebouwd!")
+
+        except Exception as e:
+            print(f"Fout bij opnieuw opbouwen zoekindex: {e}")
+
+    else:
+        print("\nGeen database-updates uitgevoerd. Zoekindex blijft ongewijzigd.")
+
+    print("\n========== DATA-UPDATE AFGEROND ==========")
 
 
 if __name__ == "__main__":

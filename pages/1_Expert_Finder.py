@@ -255,7 +255,7 @@ def render_single_result(result, conn):
 
 # ----------------------------
 # UI building
-st.set_page_config(page_title="Expert Finder", page_icon="🔎")
+st.set_page_config(page_title="Expert Finder", page_icon="🔎", layout="wide")
 
 
 # if "selected_terms" not in st.session_state:
@@ -330,6 +330,8 @@ query = st.chat_input("Waar ben je naar op zoek?")
 if query:
     history = st.session_state.ai_history.copy()
 
+    st.session_state.ai_history.append({"role": "user", "content": query})
+
     with st.chat_message("user"):
         st.markdown(query)
 
@@ -339,10 +341,8 @@ if query:
                 answer, results = answer_question(query, history, conn)
                 st.markdown(answer)
 
-                st.session_state.ai_history.extend([
-                    {"role": "user", "content": query},
-                    {"role": "assistant", "content": answer},
-                ])
+                # Sla het antwoord ook op
+                st.session_state.ai_history.append({"role": "assistant", "content": answer})
                 st.session_state.ai_results = results
 
             except Exception as e:
@@ -352,7 +352,7 @@ if st.session_state.ai_results is not None:
     with st.expander("Bekijk de onderliggende zoekresultaten"):
         results = st.session_state.ai_results
         if isinstance(results, pd.DataFrame):
-            st.dataframe(results, use_container_width=True)
+            st.dataframe(results, width="stretch")
         else:
             st.write(results)
 
@@ -360,8 +360,8 @@ if st.session_state.ai_results is not None:
 # query = st.text_input("Zoekterm(en)/Search term(s)")
 # TOP_FINAL = st.number_input("Max resultaten/results", min_value=1, max_value=150, value=10)
 
-with st.chat_message("assistant"):
-    st.write("Hello human")
+# with st.chat_message("assistant"):
+#     st.write("Hello human")
 
 # -----------------------------------
 # FIXME
@@ -385,73 +385,73 @@ def toon_popup():
 # -----------------------------------
 
 selected_terms = []
-
-if query:
-    # expanded search
-    # dfs = run_search(query, TOP_FTS)
-
-    results = run_search(query, TOP_FTS, conn)
-
-    linkedin_url = create_linkedin_url(query)
-    st.link_button("Zoek professionals op LinkedIn →", linkedin_url)
-
-    if results.empty:
-        st.warning(
-            "Geen resultaten gevonden"
-        )
-        st.stop()
-
-    # if not dfs:
-    if results is None:
-        st.markdown("_Geen resultaten gevonden._")
-        st.warning("Keyword not found. Try a different one.", icon="❗❗❗")
-    else:
-        TAB_LIMITS = {
-            "All": TOP_FINAL * 2,
-            "Osiris": max(5, TOP_FINAL),
-            "Employees": max(5, TOP_FINAL),
-            "Repo": max(5, TOP_FINAL),
-        }
-
-        results = results.sort_values("final_score", ascending=False)
-
-        # per bron
-        results_O = results[results["source"] == "Osiris"].head(TAB_LIMITS["Osiris"])
-        results_E = results[results["source"] == "Employees"].head(TAB_LIMITS["Employees"])
-        results_R = results[results["source"] == "Repo"].head(TAB_LIMITS["Repo"])
-
-        # mix results
-        results_all = interleave(
-            [results_E, results_O, results_R],
-            TOP_FINAL
-        )
-
-        tabs = st.tabs(["All", "Osiris", "Employees", "Repository"])
-
-        with tabs[0]:
-            for _, row in results_all.iterrows():
-                render_single_result(row, conn)
-                st.markdown("---")
-
-        with tabs[1]:
-            for _, row in results_O.iterrows():
-                render_single_result(row, conn)
-                st.markdown("---")
-
-        with tabs[2]:
-            for _, row in results_E.iterrows():
-                render_single_result(row, conn)
-                st.markdown("---")
-
-        with tabs[3]:
-            for _, row in results_R.iterrows():
-                render_single_result(row, conn)
-                st.markdown("---")
-
-    # except Exception as e:
-    #     st.write("No matches found.")
-    #     st.warning("Invalid input", icon="❗")
-    #     # st.write(e)
+#
+# if query:
+#     # expanded search
+#     # dfs = run_search(query, TOP_FTS)
+#     query = query.strip(".,;:'\"[{]}()}]-_*&^%$#@!`~\\|")
+#     results = run_search(query, TOP_FTS, conn)
+#
+#     linkedin_url = create_linkedin_url(query)
+#     st.link_button("Zoek professionals op LinkedIn →", linkedin_url)
+#
+#     if results.empty:
+#         st.warning(
+#             "Geen resultaten gevonden"
+#         )
+#         st.stop()
+#
+#     # if not dfs:
+#     if results is None:
+#         st.markdown("_Geen resultaten gevonden._")
+#         st.warning("Keyword not found. Try a different one.", icon="❗❗❗")
+#     else:
+#         TAB_LIMITS = {
+#             "All": TOP_FINAL * 2,
+#             "Osiris": max(5, TOP_FINAL),
+#             "Employees": max(5, TOP_FINAL),
+#             "Repo": max(5, TOP_FINAL),
+#         }
+#
+#         results = results.sort_values("final_score", ascending=False)
+#
+#         # per bron
+#         results_O = results[results["source"] == "Osiris"].head(TAB_LIMITS["Osiris"])
+#         results_E = results[results["source"] == "Employees"].head(TAB_LIMITS["Employees"])
+#         results_R = results[results["source"] == "Repo"].head(TAB_LIMITS["Repo"])
+#
+#         # mix results
+#         results_all = interleave(
+#             [results_E, results_O, results_R],
+#             TOP_FINAL
+#         )
+#
+#         tabs = st.tabs(["All", "Osiris", "Employees", "Repository"])
+#
+#         with tabs[0]:
+#             for _, row in results_all.iterrows():
+#                 render_single_result(row, conn)
+#                 st.markdown("---")
+#
+#         with tabs[1]:
+#             for _, row in results_O.iterrows():
+#                 render_single_result(row, conn)
+#                 st.markdown("---")
+#
+#         with tabs[2]:
+#             for _, row in results_E.iterrows():
+#                 render_single_result(row, conn)
+#                 st.markdown("---")
+#
+#         with tabs[3]:
+#             for _, row in results_R.iterrows():
+#                 render_single_result(row, conn)
+#                 st.markdown("---")
+#
+#     # except Exception as e:
+#     #     st.write("No matches found.")
+#     #     st.warning("Invalid input", icon="❗")
+#     #     # st.write(e)
 print("-------------------------")
 print("-------------------------")
 print("-------------------------")

@@ -50,11 +50,19 @@ def cosine_sim(a, b):
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 
+
+import re
+
 def build_fts_query(user_query: str) -> str:
-    terms = user_query.strip().split()
+    terms = re.findall(r"[^\W_]+", user_query.lower(), flags=re.UNICODE)
+
+    if not terms:
+        return ""
+
     if len(terms) == 1:
         return terms[0]
-    exact = f'"{user_query}"'
+
+    exact = f'"{" ".join(terms)}"'
     and_query = " AND ".join(terms)
     or_query = " OR ".join(terms)
 

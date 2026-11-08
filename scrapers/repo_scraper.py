@@ -1,18 +1,3 @@
-import pandas as pd
-# # importing libraries
-import time
-import requests
-from bs4 import BeautifulSoup
-import string
-import re
-# from requests_html import HTMLSession
-from playwright.sync_api import sync_playwright
-import csv
-from urllib.parse import urljoin
-from datetime import datetime, timedelta
-import os
-import glob
-
 # from requests_html import HTMLSession
 
 base_url = "https://repository.ubn.ru.nl"
@@ -30,22 +15,44 @@ BASE_URL = "https://repository.ubn.ru.nl/"
 
 
 def create_repo_session():
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/128.0.0.0 Safari/537.36",
-        "Referer": BASE_URL}
-    session = requests.Session()
+    from playwright.sync_api import sync_playwright
 
-    response = session.get(BASE_URL, headers=headers)
-    response.raise_for_status()
-    print(f"Base url connected: {base_url}")
-    # base_title = urljoin(BASE_URL, "browse?type=title")
-    # response = session.get(base_title, headers=headers)
-    # response.raise_for_status()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,nl;q=0.8",
+    }
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(user_agent=headers["User-Agent"])
+        page = context.new_page()
+
+        response = page.goto(BASE_URL, wait_until="domcontentloaded", timeout=60000)
+
+        print("Browser status:", response.status if response else "Geen response")
+
+        if response and response.status >= 400:
+            browser.close()
+            raise RuntimeError(f"Repository weigert browserverzoek: {response.status}")
+
+        cookies = context.cookies()
+        browser.close()
+
+    session = requests.Session()
+    session.headers.update(headers)
+
+    for cookie in cookies:
+        session.cookies.set(
+            cookie["name"],
+            cookie["value"],
+            domain=cookie.get("domain"),
+            path=cookie.get("path", "/")
+        )
+
+    print("Cookies overgenomen:", len(cookies))
 
     return session, headers
-
 
 def scrape_repo_departments(session, headers):
     base_title = "https://repository.ubn.ru.nl/browse?type=title"
@@ -204,7 +211,8 @@ def test_repo_access():
 
     session = requests.Session()
 
-    response = session.get(base_url, headers=headers)
+    response = session.get(base_url, headers=headers, timeout=30)
+    response.raise_for_status()
     print("BASE:", response.status_code, response.url)
     print("COOKIES:", session.cookies.get_dict())
     response.raise_for_status()
