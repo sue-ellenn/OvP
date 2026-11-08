@@ -39,20 +39,33 @@ def download_if_missing():
         path.parent.mkdir(parents=True, exist_ok=True)
 
         with st.spinner(f"Downloading {fname}..."):
-            r = requests.get(url, timeout=180)
-            r.raise_for_status()
-
             temp_path = path.with_suffix(path.suffix + ".tmp")
-            temp_path.write_bytes(r.content)
 
-            if temp_path.stat().st_size == 0:
-                temp_path.unlink()
-                raise RuntimeError(f"Empty download: {fname}")
+            with requests.get(url, stream=True, timeout=300) as r:
+                r.raise_for_status()
+
+                with open(temp_path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+
+            if fname == "search.db":
+                with sqlite3.connect(temp_path) as test:
+                    tables = {
+                        row[0] for row in test.execute(
+                            "SELECT name FROM sqlite_master WHERE type='table'"
+                        )
+                    }
+
+                required = {"employee", "osiris", "repo", "course_employee", "search"}
+
+                if not required.issubset(tables):
+                    temp_path.unlink()
+                    raise RuntimeError(f"Downloaded database incomplete: {required - tables}")
 
             temp_path.replace(path)
 
-        print(f"Downloaded {fname}: {path.stat().st_size} bytes")
-
+            print(f"{fname}: {path.stat().st_size / 1024**2:.2f} MB")
 # download_if_missing()
 
 @st.cache_resource(show_spinner=False)
