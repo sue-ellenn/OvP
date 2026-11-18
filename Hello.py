@@ -1,3 +1,5 @@
+
+print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
 import base64
 
 import pandas as pd
@@ -9,6 +11,14 @@ import requests
 import sys
 import os
 import openai
+import uuid
+
+from feedback import init_feedback_db, save_employee_feedback
+if "feedback_session_id" not in st.session_state:
+    st.session_state.feedback_session_id = str(uuid.uuid4())
+
+if "given_feedback" not in st.session_state:
+    st.session_state.given_feedback = set()
 
 # os.chdir('..')
 # sys.path.insert(1, os.getcwd())
@@ -20,6 +30,7 @@ from utils import *
 from search import *
 from llm_client import answer_question
 import inspect
+
 print("LLM CLIENT:", inspect.getfile(answer_question))
 print("SIGNATURE:", inspect.signature(answer_question))
 # os.chdir('pages')
@@ -61,13 +72,7 @@ embeddings, meta, model = load_resources()
 conn = get_connection()
 
 
-# print("all columns: ", )
 #
-# print(pd.read_sql("PRAGMA table_info(employee)", conn))
-# print(pd.read_sql("PRAGMA table_info(osiris)", conn))
-# print(pd.read_sql("PRAGMA table_info(repo)", conn))
-# print(pd.read_sql("PRAGMA table_info(course_employee)", conn))
-
 # def create_linkedin_url(query, location=None, company=None, title=None):
 #     params = []
 #
@@ -92,61 +97,87 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
 def create_linkedin_url(query):
     return f"https://www.linkedin.com/search/results/people/?keywords={quote(query)}"
 
 
-def render_single_result(result, conn):
-    """
-    generates a single result in the required format
-    @param result: search result
-    @param conn: sqlit3 connection
-    @return:
-    """
+def render_single_result(result, conn, show_feedback=False, query=None):
     name = result["name"]
     source = result["source"]
+    explanation = result.get("explanation", "")
 
-    # if source == "Osiris":
-    #     course = get_osiris_course(name, O)
-    #     name = course['LANGE_NAAM_NL']
-
-    # st.markdown("### " + name)
-    # st.caption(f"Bron: {source}")
-
-    # employees
+    # Medewerkers
     if source == "Employees":
         employee = get_employee(name, conn)
+
         if employee.empty:
             st.markdown("_Geen medewerker gevonden._")
             return
 
         employee = employee.iloc[0]
 
-        st.markdown(f"## {employee['name']}")
+        col1, col2 = st.columns([5, 1])
 
-        if pd.notna(employee["url"]):
-            st.markdown(f"[Medewerkerspagina]({employee['url']})")
+        with col1:
+            st.markdown(f"### {employee['name']}")
 
-        if pd.notna(employee["faculties"]):
-            st.markdown(f"**Faculteit:** {employee['faculties']}")
+            if pd.notna(employee["url"]):
+                st.markdown(f"[Medewerkerspagina]({employee['url']})")
 
-        if pd.notna(employee["onderzoeksthema"]):
-            st.markdown(f"**Onderzoeksthema:** {employee['onderzoeksthema']}")
+            if pd.notna(employee["faculties"]):
+                st.markdown(f"**Faculteit:** {employee['faculties']}")
 
-        if pd.notna(employee["onderzoeksgroep"]):
-            st.markdown(f"**Onderzoeksgroep:** {employee['onderzoeksgroep']}")
+            if pd.notna(employee["onderzoeksthema"]):
+                st.markdown(
+                    f"**Onderzoeksthema:** {employee['onderzoeksthema']}"
+                )
+
+            if pd.notna(employee["onderzoeksgroep"]):
+                st.markdown(
+                    f"**Onderzoeksgroep:** {employee['onderzoeksgroep']}"
+                )
+
+            if explanation:
+                st.markdown("**Waarom relevant?**")
+                st.write(explanation)
+
+        with col2:
+            if show_feedback:
+                feedback_key = f"{employee['name']}_{query}"
+
+                if "given_feedback" not in st.session_state:
+                    st.session_state.given_feedback = set()
+
+                if feedback_key in st.session_state.given_feedback:
+                    st.success("👍")
+                elif st.button(
+                    "👍",
+                    key=f"feedback_{feedback_key}",
+                    help="Deze medewerker was relevant"
+                ):
+                    save_employee_feedback(
+                        name=employee["name"],
+                        url=(
+                            employee["url"]
+                            if pd.notna(employee["url"])
+                            else ""
+                        ),
+                        query=query,
+                        session_id=st.session_state.feedback_session_id
+                    )
+
+                    st.session_state.given_feedback.add(feedback_key)
+                    st.rerun()
 
         courses = get_courses_for_employee(employee["name"], conn)
 
         if not courses.empty:
-            st.markdown("### Geeft onderwijs in:")
-
-            with st.expander("Onderwijs"):
+            with st.expander("Geeft onderwijs in"):
                 for _, course in courses.iterrows():
-                    # add course name
-                    st.write(f"- {course['course']}: {None}")
+                    st.write(f"- {course['course']}")
 
-
+    # Cursussen
     elif source == "Osiris":
         course = get_osiris_course(name, conn)
 
@@ -154,95 +185,46 @@ def render_single_result(result, conn):
             st.markdown("_Geen cursusdetails gevonden._")
             return
 
-        # course = course.iloc[0]
-        try:
-            st.caption(f"## Vak: {course['lange_naam']} ({course['cursus']})")
-        except Exception as e:
-            print("NOOOO")
-            pass
-        # capt = f"## Vak: lnaam ({course['cursus']})"
-        # st.caption(f"## Vakcode: {course['cursus']}")
-        #
-        # if pd.notna(course["lange_naam"]):
-        #     # st.markdown(f"**Vaknaam:** {course['lange_naam']}")
-        #     capt.replace("lnaam", str(course['lange_naam']))
-        #     st.caption(capt)
-        # else:
-        #     st.caption(f"## Vakcode: {course['cursus']}")
+        st.markdown(
+            f"### {course['lange_naam']} ({course['cursus']})"
+        )
 
-        # st.caption(capt)
-        # if pd.notna(course['docent_rol']):
-        #     st.markdown(f"**DOCENTEN:** {course['docent_rol']}")
+        if explanation:
+            st.markdown("**Waarom relevant?**")
+            st.write(explanation)
 
-        # gekoppelde docenten
-
-        # print("counts")
-        # print(pd.read_sql("""
-        #     SELECT COUNT(*)
-        #     FROM course_employee
-        #     """, conn))
-        print("-------------------------")
-        # print("course:", course)
         employees = get_employees_for_course(course["cursus"], conn)
-        #
-        # print(pd.read_sql("""
-        # SELECT *
-        # FROM course_employee
-        # WHERE course = ?
-        # LIMIT 5
-        # """, conn, params=(course["cursus"],)))
-        #
-        # print("---")
-        #
-        # print("check")
-        # print(pd.read_sql("""
-        # SELECT *
-        # FROM course_employee
-        # LIMIT 10
-        # """, conn))
-        # print(employees)
 
         if not employees.empty:
-
-            st.markdown("### Docenten")
-
-            for _, employee in employees.iterrows():
-
-                with st.expander(employee["employee"]):
+            with st.expander("Docenten"):
+                for _, employee in employees.iterrows():
+                    st.markdown(f"**{employee['employee']}**")
 
                     if pd.notna(employee["employee_url"]):
-                        st.markdown(f"[Medewerkerspagina]({employee['employee_url']})")
+                        st.markdown(
+                            f"[Medewerkerspagina]({employee['employee_url']})"
+                        )
 
-                    render_single_result(
-                        {
-                            "name": employee["employee"],
-                            "source": "Employees"
-                        },
-                        conn)
-
-        # overige cursusinformatie
-        st.markdown("### Vak informatie")
-
-        with st.expander("Meer info..."):
-
+        with st.expander("Vak informatie"):
             if pd.notna(course["inhoud"]):
                 st.markdown(f"**Inhoud:** {course['inhoud']}")
 
             if pd.notna(course["doel"]):
                 st.markdown(f"**Doel:** {course['doel']}")
 
-
+    # Publicaties
     elif source == "Repo":
-
         paper = get_repository_record(name, conn)
 
         if paper is None:
             st.markdown("_Geen publicatiegegevens gevonden._")
             return
 
-        # paper = paper.iloc[0]
+        st.markdown(f"### {paper['title']}")
 
-        st.caption(f"## {paper['title']}")
+        if explanation:
+            st.markdown("**Waarom relevant?**")
+            st.write(explanation)
 
         if pd.notna(paper["authors"]):
             st.markdown(f"**Auteurs:** {paper['authors']}")
@@ -254,14 +236,12 @@ def render_single_result(result, conn):
             st.markdown(f"**Keywords:** {paper['keywords']}")
 
         if pd.notna(paper["title_url"]):
-            st.markdown(f"[Publicatie bekijken]({paper['title_url']})")
-
+            st.markdown(
+                f"[Publicatie bekijken]({paper['title_url']})"
+            )
 
     else:
         st.warning(f"Onbekende bron: {source}")
-
-    return
-
 
 # ----------------------------
 # UI building
@@ -314,8 +294,25 @@ st.title("Onderwijs voor Professionals: Expert finder")
 # )
 
 st.info("""
-Display welkom message : )
-""")
+### Welkom bij de Expert Finder
+
+Met de **Expert Finder** kun je eenvoudig zoeken naar kennis en expertise binnen de Radboud Universiteit. De AI-assistent doorzoekt medewerkersprofielen, cursusinformatie en publicaties om relevante resultaten te vinden.
+
+**Hoe gebruik je de Expert Finder?**
+1. Stel een vraag over een onderwerp of expertise waar je naar op zoek bent.
+2. Bekijk de gevonden medewerkers, cursussen en publicaties.
+3. Stel eventueel een vervolgvraag om je zoekopdracht te verfijnen.
+
+**Voorbeeldvraag:**
+
+*Welke medewerkers houden zich bezig met artificial intelligence en machine learning binnen de Radboud Universiteit?*
+
+Vergeet niet om relevante resultaten een duimpje te geven! Daar wordt het systeem steeds beter van :)
+
+**Tip:** Je hoeft geen specifieke zoektermen te kennen. Stel je vraag gewoon in je eigen woorden. Hoe concreter je vraag, hoe gerichter de resultaten.
+
+Veel succes met ontdekken!
+""", icon="🔎")
 
 # st.warning(
 #         "NL: Deze tool is de eerste versie van een ontwikkeling gedaan voor Radboud Universiteit - Onderwijs voor Professionals (OvP).\n"
@@ -329,46 +326,174 @@ Display welkom message : )
 
 # st.subheader("AI-assistent")
 
+
+
+# ---------------------------------------------------------
+# Chat initialiseren
+# ---------------------------------------------------------
+
+if "ai_answer" not in st.session_state:
+    st.session_state.ai_answer = None
+
+if "ai_query" not in st.session_state:
+    st.session_state.ai_query = ""
+
 if "ai_history" not in st.session_state:
     st.session_state.ai_history = []
 
 if "ai_results" not in st.session_state:
     st.session_state.ai_results = None
 
+if "feedback_session_id" not in st.session_state:
+    st.session_state.feedback_session_id = str(uuid.uuid4())
+
+if "given_feedback" not in st.session_state:
+    st.session_state.given_feedback = set()
+
+init_feedback_db()
+
+
+# ---------------------------------------------------------
+# Eerdere chatberichten weergeven
+# ---------------------------------------------------------
+
 for message in st.session_state.ai_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+
+# ---------------------------------------------------------
+# Nieuwe vraag verwerken
+# ---------------------------------------------------------
+
 query = st.chat_input("Waar ben je naar op zoek?")
 
 if query:
+    # Bestaande geschiedenis meegeven, zonder de nieuwe vraag
+    # hier alvast dubbel aan toe te voegen.
     history = st.session_state.ai_history.copy()
-
-    st.session_state.ai_history.append({"role": "user", "content": query})
 
     with st.chat_message("user"):
         st.markdown(query)
 
     with st.chat_message("assistant"):
-        with st.spinner("Zoekresultaten ophalen en antwoord genereren..."):
+        with st.spinner(
+            "Relevante medewerkers, cursussen en publicaties zoeken..."
+        ):
             try:
-                answer, results = answer_question(query, history, conn)
-                st.markdown(answer)
+                answer, results = answer_question(
+                    query,
+                    history,
+                    conn
+                )
 
-                # Sla het antwoord ook op
-                st.session_state.ai_history.append({"role": "assistant", "content": answer})
+                # Antwoord controleren
+                if not isinstance(answer, dict):
+                    answer = {
+                        "introduction": "Ik heb relevante resultaten gevonden.",
+                        "results": [],
+                        "conclusion": ""
+                    }
+
+                if not isinstance(results, pd.DataFrame):
+                    results = pd.DataFrame()
+
+                if "explanation" not in results.columns:
+                    results["explanation"] = ""
+
+                # Volledig antwoord opslaan
+                st.session_state.ai_answer = answer
                 st.session_state.ai_results = results
+                st.session_state.ai_query = query
+
+                # Gesprekscontext opbouwen
+                history_text = answer.get("introduction", "")
+
+                if not results.empty:
+                    history_text += "\n\nEerder geselecteerde resultaten:\n"
+
+                    for _, row in results.iterrows():
+                        history_text += (
+                            f"\n- Naam: {row['name']}"
+                            f"\n  Bron: {row['source']}"
+                            f"\n  Relevantie: {row.get('explanation', '')}\n"
+                        )
+
+                history_text += "\n" + answer.get("conclusion", "")
+
+                # Gebruikersvraag en AI-antwoord ieder één keer opslaan
+                st.session_state.ai_history.append({
+                    "role": "user",
+                    "content": query
+                })
+
+                st.session_state.ai_history.append({
+                    "role": "assistant",
+                    "content": history_text
+                })
 
             except Exception as e:
                 st.error(f"De AI-assistent kon geen antwoord geven: {e}")
+                st.exception(e)
+
+
 
 if st.session_state.ai_results is not None:
+
+    answer = st.session_state.ai_answer or {}
+    results = st.session_state.ai_results
+    query = st.session_state.ai_query
+
+    introduction = answer.get(
+        "introduction",
+        "Ik heb relevante resultaten gevonden."
+    )
+
+    conclusion = answer.get("conclusion", "")
+
+    # Introductie altijd weergeven
+    if introduction:
+        st.markdown(introduction)
+
+    # Resultaatkaarten
+    if not results.empty:
+        st.divider()
+
+        for _, result in results.iterrows():
+            with st.container(border=True):
+                render_single_result(
+                    result,
+                    conn,
+                    show_feedback=(result["source"] == "Employees"),
+                    query=query
+                )
+
+        # Conclusie altijd weergeven, ook als er geen kaarten zijn
+        if conclusion:
+            st.divider()
+            st.markdown(conclusion)
+
+    else:
+        st.info(
+            "Ik heb geen relevante medewerkers, cursussen of "
+            "publicaties kunnen vinden."
+        )
+
+        if conclusion:
+            st.markdown(conclusion)
+
+    # Onderliggende zoekresultaten
     with st.expander("Bekijk de onderliggende zoekresultaten"):
-        results = st.session_state.ai_results
-        if isinstance(results, pd.DataFrame):
-            st.dataframe(results, width="stretch")
+        if not results.empty:
+            st.dataframe(
+                results.drop(
+                    columns=["explanation"],
+                    errors="ignore"
+                ),
+                width="stretch"
+            )
         else:
-            st.write(results)
+            st.write("Geen zoekresultaten.")
 
 
 # query = st.text_input("Zoekterm(en)/Search term(s)")
@@ -379,11 +504,12 @@ if st.session_state.ai_results is not None:
 
 # -----------------------------------
 # FIXME
-@st.dialog("Mijn Pop-up Venster")
-def toon_popup():
-    st.write("Dit is de inhoud van het pop-upvenster.")
-    if st.button("Sluiten"):
-        st.rerun()
+# @st.dialog("Mijn Pop-up Venster")
+# def toon_popup():
+#     st.write("Dit is de inhoud van het pop-upvenster.")
+#     if st.button("Sluiten"):
+#         st.rerun()
+
 
 #
 # if st.button("Open pop-up"):
@@ -399,91 +525,3 @@ def toon_popup():
 # -----------------------------------
 
 selected_terms = []
-#
-# if query:
-#     # expanded search
-#     # dfs = run_search(query, TOP_FTS)
-#     query = query.strip(".,;:'\"[{]}()}]-_*&^%$#@!`~\\|")
-#     results = run_search(query, TOP_FTS, conn)
-#
-#     linkedin_url = create_linkedin_url(query)
-#     st.link_button("Zoek professionals op LinkedIn →", linkedin_url)
-#
-#     if results.empty:
-#         st.warning(
-#             "Geen resultaten gevonden"
-#         )
-#         st.stop()
-#
-#     # if not dfs:
-#     if results is None:
-#         st.markdown("_Geen resultaten gevonden._")
-#         st.warning("Keyword not found. Try a different one.", icon="❗❗❗")
-#     else:
-#         TAB_LIMITS = {
-#             "All": TOP_FINAL * 2,
-#             "Osiris": max(5, TOP_FINAL),
-#             "Employees": max(5, TOP_FINAL),
-#             "Repo": max(5, TOP_FINAL),
-#         }
-#
-#         results = results.sort_values("final_score", ascending=False)
-#
-#         # per bron
-#         results_O = results[results["source"] == "Osiris"].head(TAB_LIMITS["Osiris"])
-#         results_E = results[results["source"] == "Employees"].head(TAB_LIMITS["Employees"])
-#         results_R = results[results["source"] == "Repo"].head(TAB_LIMITS["Repo"])
-#
-#         # mix results
-#         results_all = interleave(
-#             [results_E, results_O, results_R],
-#             TOP_FINAL
-#         )
-#
-#         tabs = st.tabs(["All", "Osiris", "Employees", "Repository"])
-#
-#         with tabs[0]:
-#             for _, row in results_all.iterrows():
-#                 render_single_result(row, conn)
-#                 st.markdown("---")
-#
-#         with tabs[1]:
-#             for _, row in results_O.iterrows():
-#                 render_single_result(row, conn)
-#                 st.markdown("---")
-#
-#         with tabs[2]:
-#             for _, row in results_E.iterrows():
-#                 render_single_result(row, conn)
-#                 st.markdown("---")
-#
-#         with tabs[3]:
-#             for _, row in results_R.iterrows():
-#                 render_single_result(row, conn)
-#                 st.markdown("---")
-#
-#     # except Exception as e:
-#     #     st.write("No matches found.")
-#     #     st.warning("Invalid input", icon="❗")
-#     #     # st.write(e)
-print("-------------------------")
-print("-------------------------")
-print("-------------------------")
-
-# streamlit run Hello.py --server.runOnSave true
-
-"""
-cd OvP
-.venv\Scripts\activate
-cd pages
-uv run streamlit run 1_Expert_Finder.py --server.runOnSave true
-
-"""
-
-"""
-
-.venv\Scripts\activate
-cd OvP
-uv run streamlit run Hello.py --server.runOnSave true
-
-"""

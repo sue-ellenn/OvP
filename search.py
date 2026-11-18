@@ -101,45 +101,124 @@ def get_similar_terms(query, model, embeddings, meta, top_k=5):
 
 
 # @st.cache_data(max_entries=150)
-def run_search(query, TOP_FTS, conn):
+# def run_search(query, TOP_FTS, conn):
+#     start = time.time()
+#     # query = query.replace(r"?*!*.*", "")
+#
+#     fts_query = build_fts_query(query)
+#     print("FTS query:", fts_query)
+#
+#     embeddings, meta, model = load_resources()
+#     # conn = get_connection()
+#
+#     sources = ["Employees", "Osiris", "Repo"]
+#     dfs = []
+#
+#     # expanded_queries = expand_query(query, model, embeddings, meta)
+#     # print("Download check1:", time.time() - start)
+#     # start = time.time()
+#
+#     # with st.expander("**Actual query:**"):
+#     #     st.markdown(f"{expanded_queries}")
+#
+#     query_embeddings = model.encode(
+#         [fts_query],
+#         normalize_embeddings=True
+#     )
+#
+#     # print("Download check2:", time.time() - start)
+#     # start = time.time()
+#
+#     def max_sim(rowids):
+#
+#         docs = embeddings[
+#             np.array(rowids) - 1
+#             ]
+#
+#         scores = np.dot(
+#             docs,
+#             query_embeddings.T
+#         )
+#
+#         return scores.max(axis=1)
+#
+#     for source in sources:
+#         df = pd.read_sql_query(
+#             """
+#             SELECT rowid, name, source, bm25(search) AS rank
+#             FROM search
+#             WHERE search MATCH ?
+#             AND source = ?
+#             ORDER BY rank
+#             LIMIT ?
+#             """,
+#             conn,
+#             params=(fts_query, source, TOP_FTS)
+#         )
+#         print(source, len(df))
+#         # print("Download check3:", time.time() - start)
+#         # start = time.time()
+#
+#         if df.empty:
+#             continue
+#
+#         df["bm25_score"] = 1 / (1 + df["rank"])
+#
+#         # df["semantic_score"] = [
+#         #     cosine_sim(q_emb, embeddings[rowid - 1])
+#         #     for rowid in df["rowid"]
+#         # ]
+#
+#         df["semantic_score"] = max_sim(
+#             df["rowid"].values
+#         )
+#         # print("Download check4:", time.time() - start)
+#         # start = time.time()
+#
+#         df["final_score"] = (
+#                 0.6 * df["semantic_score"] +
+#                 0.4 * df["bm25_score"]
+#         )
+#
+#         # 🔥 per bron top N pakken
+#         df = df.sort_values("final_score", ascending=False).head(20)
+#
+#         dfs.append(df)
+#
+#     print("Total time:", time.time() - start)
+#     if not dfs:
+#         # conn.close()
+#         return pd.DataFrame()
+#
+#     result = pd.concat(
+#         dfs,
+#         ignore_index=True
+#     )
+#
+#     # conn.close()
+#
+#     return result
+
+
+def run_search(query, TOP_FTS, conn, max_results_per_source=30, sources=None):
     start = time.time()
-    # query = query.replace(r"?*!*.*", "")
 
     fts_query = build_fts_query(query)
     print("FTS query:", fts_query)
 
     embeddings, meta, model = load_resources()
-    # conn = get_connection()
 
-    sources = ["Employees", "Osiris", "Repo"]
+    sources = sources or ["Employees", "Osiris", "Repo"]
     dfs = []
-
-    # expanded_queries = expand_query(query, model, embeddings, meta)
-    # print("Download check1:", time.time() - start)
-    # start = time.time()
-
-    # with st.expander("**Actual query:**"):
-    #     st.markdown(f"{expanded_queries}")
 
     query_embeddings = model.encode(
         [fts_query],
         normalize_embeddings=True
     )
 
-    # print("Download check2:", time.time() - start)
-    # start = time.time()
-
     def max_sim(rowids):
-
-        docs = embeddings[
-            np.array(rowids) - 1
-            ]
-
-        scores = np.dot(
-            docs,
-            query_embeddings.T
-        )
-
+        docs = embeddings[np.array(rowids) - 1]
+        scores = np.dot(docs, query_embeddings.T)
         return scores.max(axis=1)
 
     for source in sources:
@@ -155,46 +234,31 @@ def run_search(query, TOP_FTS, conn):
             conn,
             params=(fts_query, source, TOP_FTS)
         )
+
         print(source, len(df))
-        # print("Download check3:", time.time() - start)
-        # start = time.time()
 
         if df.empty:
             continue
 
         df["bm25_score"] = 1 / (1 + df["rank"])
-
-        # df["semantic_score"] = [
-        #     cosine_sim(q_emb, embeddings[rowid - 1])
-        #     for rowid in df["rowid"]
-        # ]
-
-        df["semantic_score"] = max_sim(
-            df["rowid"].values
-        )
-        # print("Download check4:", time.time() - start)
-        # start = time.time()
+        df["semantic_score"] = max_sim(df["rowid"].values)
 
         df["final_score"] = (
-                0.6 * df["semantic_score"] +
-                0.4 * df["bm25_score"]
+            0.6 * df["semantic_score"] +
+            0.4 * df["bm25_score"]
         )
 
-        # 🔥 per bron top N pakken
-        df = df.sort_values("final_score", ascending=False).head(20)
+        df = df.sort_values(
+            "final_score",
+            ascending=False
+        ).head(max_results_per_source)
 
         dfs.append(df)
 
     print("Total time:", time.time() - start)
+
     if not dfs:
-        # conn.close()
         return pd.DataFrame()
 
-    result = pd.concat(
-        dfs,
-        ignore_index=True
-    )
+    return pd.concat(dfs, ignore_index=True)
 
-    # conn.close()
-
-    return result

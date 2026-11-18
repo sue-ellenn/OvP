@@ -9,6 +9,7 @@ from io import BytesIO
 import requests
 from collections import defaultdict
 import time
+import uuid
 
 # pd.read_csv("created_data/cleaned_data/repo.csv").to_parquet('created_data/cleaned_data/repo.parquet', compression="snappy")
 
@@ -33,39 +34,58 @@ PATHS = {
     "meta.npy": DATA_DIR / "meta.npy"
 }
 
+
+
 def download_if_missing():
     for fname, url in FILES.items():
         path = PATHS[fname]
+        if path.exists():
+            continue
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        with st.spinner(f"Downloading {fname}..."):
-            temp_path = path.with_suffix(path.suffix + ".tmp")
+        # Unique temporary file prevents collisions between reruns/sessions
+        temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
 
-            with requests.get(url, stream=True, timeout=300) as r:
-                r.raise_for_status()
+        try:
+            with st.spinner(f"Downloading {fname}..."):
+                with requests.get(url, stream=True, timeout=300) as r:
+                    r.raise_for_status()
 
-                with open(temp_path, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
+                    with open(temp_path, "wb") as f:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
 
-            if fname == "search.db":
-                with sqlite3.connect(temp_path) as test:
-                    tables = {
-                        row[0] for row in test.execute(
-                            "SELECT name FROM sqlite_master WHERE type='table'"
-                        )
+                if fname == "search.db":
+                    test = sqlite3.connect(temp_path)
+                    try:
+                        tables = {
+                            row[0] for row in test.execute(
+                                "SELECT name FROM sqlite_master WHERE type='table'"
+                            )
+                        }
+                    finally:
+                        test.close()
+
+                    required = {
+                        "employee", "osiris", "repo", "course_employee", "search"
                     }
 
-                required = {"employee", "osiris", "repo", "course_employee", "search"}
+                    if not required.issubset(tables):
+                        raise RuntimeError(
+                            f"Downloaded database incomplete: {required - tables}"
+                        )
 
-                if not required.issubset(tables):
-                    temp_path.unlink()
-                    raise RuntimeError(f"Downloaded database incomplete: {required - tables}")
+                # Replace only after download and validation are complete
+                temp_path.replace(path)
 
-            temp_path.replace(path)
+                print(f"{fname}: {path.stat().st_size / 1024**2:.2f} MB")
 
-            print(f"{fname}: {path.stat().st_size / 1024**2:.2f} MB")
+        finally:
+            # Clean up temp file if download or validation failed
+            if temp_path.exists():
+                temp_path.unlink()
+
 # download_if_missing()
 
 @st.cache_resource(show_spinner=False)
@@ -138,7 +158,6 @@ def get_connection():
         print("AANWEZIGE TABELLEN:", test_conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall())
-
 
     print("----------")
     print("DB_PATH:", DB_PATH.resolve())
@@ -213,13 +232,5 @@ def get_connection():
 #     return conn
 
 
-
-
-
-
-
-
 # embeddings, meta, model = load_resources()
 # conn = get_connection()
-
-
